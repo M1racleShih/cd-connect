@@ -1,0 +1,24 @@
+# Dependencies and generated output
+node_modules/
+dist/
+build/
+coverage/
+.cache/
+*.tsbuildinfo
+
+# Local configuration, credentials, and runtime state
+.env
+.env.*
+!.env.example
+!.env.sample
+.aws/
+.codex/
+.runtime/
+.local/
+*.log
+
+# Editor and operating-system files
+.idea/
+.vscode/
+.DS_Store
+*~

@@ -2,81 +2,177 @@
 
 [中文](README.md) | [English](README.en.md)
 
-We are building cd-connect to connect the ChatGPT desktop app to DeepSeek Harness: ChatGPT defines goals, makes decisions between stages, and reviews results; DeepSeek Harness executes the work.
+cd-connect connects a planning and review client to an existing DeepSeek Harness Desktop. You define a stage task on the ChatGPT/Codex side, DSH executes it within the existing native session, model, tool permissions, and human-approval boundary, and you decide whether to accept or request rework based on evidence from the **current run**.
 
-The **c** stands for **ChatGPT**, and the **d** stands for **DeepSeek Harness**.
+The **c** stands for **ChatGPT**, and the **d** stands for **DeepSeek Harness**. The currently verified planning client is a Codex desktop session; the ChatGPT web and tunnel route has not been verified.
 
-## Project status
+## Who it is for
 
-Phases 0–3 are complete. Version `0.4.1` provides durable tasks, request deduplication, manual recovery, native approval display, run-scoped cancellation and structured failure states. All 59 tests pass. The current Codex desktop conversation and DSH `0.2.1-rc.2` passed real execution, human approval/rejection, cancellation confirmation, stale controls, and cold-log reconciliation followed by same-session continuation and acceptance after an actual DSH restart. The recovery paging cursor collision found during acceptance is fixed; old-ledger repair and live paging verification both passed.
+- You already use DSH Desktop on the same Linux computer and want to hand stage goals from another conversation to it instead of copying prompts by hand.
+- You need traceable task state, explicit acceptance criteria, and reviewable evidence from the current run.
+- You accept that independent review decides whether the result passes: review may be performed by a human or by a user-authorized planning/review agent, and a model's claim of completion does not replace evidence. Native DSH approvals remain human decisions under the native policy.
 
-## Intended workflow
+It is not intended for unattended orchestration, execution across multiple machines, multi-tenant isolation, or an "exactly once" guarantee for external side effects. The first version targets a local single user.
 
-1. Describe the goal, constraints, and acceptance criteria in ChatGPT.
-2. ChatGPT delegates one stage of work to DeepSeek Harness.
-3. DeepSeek Harness uses its own model to plan, implement, test, and repair within the authorized scope.
-4. ChatGPT reads the results and verification evidence, then accepts the work, requests changes, or starts the next stage.
-5. Consequential actions wait for human approval before execution.
+## Current support
 
-The first version connects to the existing [DSH Linux](https://github.com/M1racleShih/dsh-linux) desktop instance on the same Linux computer through local MCP task submission, status, review and continuation tools. Live acceptance used the current Codex desktop conversation; other ChatGPT clients and the web tunnel route remain unverified.
+| Item | Current status |
+| --- | --- |
+| Operating system | Linux; Windows and macOS support is not claimed |
+| Users and network | Local single user; the bridge listens on loopback only |
+| DSH | DSH Desktop `0.2.1-rc.2`; only the `desktop` profile is accepted |
+| Planning and review client | A Codex desktop session has been verified through local stdio MCP; other ChatGPT clients are unverified |
+| Web/tunnel | A plausible route is documented, but it was not configured or verified and is not the default |
+| Installation | Local source installation from a complete source tree; the source repository is `M1racleShih/cd-connect`, and no npm package is provided |
+| Node.js | Declared `>=22.19.0`; dependency installation, default tests, and the recursive syntax check have been verified in clean environments on `22.19.0` and `24.18.0` |
+| CI | `.github/workflows/ci.yml` covers dependency installation, default tests, and the recursive syntax check on Linux with `22.19.0` and `24.18.0`; see the repository Actions records for execution results |
+| License | MIT, see [LICENSE](LICENSE); copyright 2026 Han-Qing Shi |
 
-## First-version scope
+The bridge exposes nine MCP tools: eight task tools plus the read-only `bridge_health`. Task submission creates an ordinary native DSH session; continuation reuses it. cd-connect does not change the model, grant extra permissions, or approve actions for you in DSH.
 
-- A single user, with an automatic execution and review loop during an active ChatGPT conversation.
-- DSH works autonomously within each delegated task; ChatGPT makes decisions between stages.
-- Interrupted work resumes manually from saved task and session records.
-- DSH retains its native workspaces, tool permissions, and user approvals.
-- Task revisions, operation ownership, and result evidence are checked to prevent duplicate execution and decisions based on stale state.
+## Quick start
 
-Long-running unattended operation, automatically waking ChatGPT, and orchestration across multiple executors are outside the first-version scope.
+Paths such as `/absolute/path/to/...` and `/tmp/...` below are placeholders; replace them with real paths. The normal path can be completed in one pass. See the [installation and maintenance guide](docs/INSTALLATION.md) (Chinese) for alternative installation routes, upgrades, uninstall, and recovery.
 
-## Installation and usage
+### 1. Prerequisites
 
-Local source installation is available; there is no published release. Use Node.js 22.19 or newer. The current DSH compatibility target is `0.2.1-rc.2`.
+You need Node.js `22.19.0` or newer, a working DSH Desktop `0.2.1-rc.2`, and a planning client that supports local stdio MCP. Put the complete source tree in any absolute directory, for example `/absolute/path/to/cd-connect`.
+
+The source repository is [M1racleShih/cd-connect](https://github.com/M1racleShih/cd-connect). Installation uses a complete source tree; no npm package is provided. Obtain the source before following the installation steps below.
+
+### 2. Install dependencies and run basic checks
 
 ```sh
+cd /absolute/path/to/cd-connect   # example path
 npm ci --ignore-scripts
 npm test
 npm run check
 ```
 
-Install this repository's absolute directory through DSH's Plugins page and enable the `cd-connect` bundle. Alternatively, fully quit DSH, use the **Desktop installation's** CLI to run `dsh plugin --profile desktop add link:/absolute/path/to/cd-connect --ignore-scripts`, and reopen Desktop. The ordinary npm CLI cannot manage the Desktop profile. Desktop retains profile ownership; never start a second CLI Host against it.
+`--ignore-scripts` matches the current installation flow; the project is ESM JavaScript that runs directly and has no build step. `npm test` runs isolated tests by default; native-component tests that require a DSH source checkout are skipped, as explained in the [contributing guide](CONTRIBUTING.md) (Chinese). `npm run check` recursively syntax-checks every `.js` file under `src/`, `scripts/`, and `test/` (including `test/support/`); it is not a type check. CI covers the same basic checks and does not include native-component tests or real-desktop acceptance.
 
-The plugin listens only on `127.0.0.1:48763/mcp`. Each activation generates an independent random credential in `cd-connect/connection.json` under the actual DSH home, with mode `0600`. The adapter reads only bridge-owned credentials, not DSH account secrets. The native plugin's `port` option overrides the port. Port conflicts, unavailable runtime metadata, invalid storage, storage ownership conflicts, or discovery write failures fail plugin loading. Disposal removes discovery and closes the listener while retaining the task ledger.
+### 3. Enable the plugin in DSH
+
+Open DSH's Plugins page, install the **absolute directory** of the source tree, and enable the `cd-connect` bundle. After activation it:
+
+- serves MCP at `127.0.0.1:48763/mcp` (the `port` option overrides the port);
+- writes an independent random credential for this activation to `cd-connect/connection.json` under the actual DSH home, with mode `0600`;
+- stores the task ledger at `cd-connect/ledger/tasks.json` under the actual DSH home.
+
+Local scripts default to `${DSH_HOME:-~/.dsh-linux}/cd-connect`; when the actual DSH home differs, set `CD_CONNECT_STATE_DIR` to it.
+
+If loading fails, check for a port conflict, the DSH version, the profile type, and storage-directory permissions. See the [installation and maintenance guide](docs/INSTALLATION.md) (Chinese) for the full alternative route.
+
+### 4. Connect MCP and confirm success
 
 ```sh
 npm run health
-npm run verify:native
-codex mcp add cd-connect -- /absolute/path/to/node /absolute/path/to/cd-connect/src/stdio.js
+codex mcp add cd-connect -- "$(command -v node)" /absolute/path/to/cd-connect/src/stdio.js
 ```
 
-The MCP stdio adapter forwards the tools advertised by the existing desktop Host. Task submission creates an ordinary native DSH session, and continuation reuses it with the existing model and permissions. Reload the DSH plugin after updates and refresh the MCP connection to discover the new tools. Its default state directory is `${DSH_HOME:-~/.dsh-linux}/cd-connect`; set `CD_CONNECT_STATE_DIR` in MCP configuration for a custom home. Refresh desktop MCP connections after registration, then ask the target conversation to call `bridge_health` directly. `verify:native` is a local SDK check, not target-conversation acceptance.
+After registration, reload the local MCP connection in your client, then ask the **target conversation to call** `bridge_health` directly. A healthy result contains:
 
-Health reports a profile fingerprint, a new ID per plugin activation, Host PID and start time, runtime version and app-boot artifact digest. `native_services` reports registered services only; also check `bridge.phase`, `capabilities.tools` and `task_storage` for the loaded version.
+- `profile: "desktop"`, `bridge.version: "0.4.1"`, and `bridge.phase: 3`;
+- `storage.healthy: true`;
+- `capabilities.task_execution: true` and `task_storage: "durable_snapshot_v1"`;
+- exactly nine tools in `capabilities.tools`, including `task_submit` and `bridge_health`.
 
-See the [official local MCP configuration guide](https://developers.openai.com/codex/mcp). For ChatGPT web, use a [custom MCP plugin](https://developers.openai.com/api/docs/guides/custom-mcp-server) and [Secure MCP Tunnel](https://developers.openai.com/api/docs/guides/secure-mcp-tunnels) targeting the local stdio adapter. That route needs account permissions and secure runtime-key entry and was not configured or verified here. Do not expose the listener publicly or put connection files, tokens or account credentials in the repository or chat.
+`npm run health` and `npm run verify:native` only verify local SDK/HTTP/stdio paths. They are **not** acceptance by the target conversation. After plugin updates, reload the DSH plugin and refresh the client's MCP connection so the tool catalog is current.
 
-To remove the connection, run `codex mcp remove cd-connect` and disable or remove the bundle in DSH's Plugins page. To remove it through the Desktop CLI, fully quit Desktop before running `dsh plugin --profile desktop remove cd-connect`.
+### 5. Complete a minimal task
 
-## Stage tasks
+First create a genuinely disposable empty workspace and record the absolute path printed by the command. It must already exist, be an absolute path, and contain only what this task is allowed to change:
 
-Follow the [task workflow guide](docs/TASK_WORKFLOW.md) (Chinese): submit a full authorized specification, wait using event cursors, page through current-run evidence, and record a review. Continue concrete rework in the same native session, then inspect new evidence. Waits default to 25 seconds; pages contain at most 50 items. Execution completion and reviewer acceptance are separate states. Continuation and cancellation require the current `run_id`, `expected_revision` and a new request ID; stale run or revision controls are rejected.
+```sh
+workspace=$(mktemp -d /tmp/cd-connect-hello.XXXXXX)
+printf '%s\n' "$workspace"
+```
 
-The private ledger lives at `cd-connect/ledger/tasks.json` under the actual DSH home, with mode `0600`. Retain the task ID and original request identity. After restart, read `task_get`, then call `task_recover` with the current revision, a new request ID and `action: inspect`. Uncertain native actions remain unresolved and are never automatically replayed. Explicit `dispatch_prepared` only sends intents durably proven unattempted. Retries return their original result; read a fresh snapshot afterward.
+Submit a specification like the following in natural language from the planning conversation; replace `<workspace>` with the actual absolute path printed above, not the placeholder:
 
-Unaccepted tasks exclude the same workspace and overlapping parent/child paths within one bridge store. Artifact witnesses captured at completion are rechecked before review; changes invalidate `artifacts.valid` and prevent acceptance based on old evidence. Tasks completed while the bridge was offline require rework to obtain a fresh completion witness. Witnesses exclude `.git`, do not follow symlinks or cover external services, and cannot prevent or attribute concurrent writes by other processes. Storage failure fences further operations until repair, reload and reconciliation. See the [workflow guide](docs/TASK_WORKFLOW.md) for recovery ordering, limits and errors. Exactly-once external side effects are not guaranteed.
+> Submit one stage task through cd-connect. Use `<workspace>` (the actual absolute path printed above; do not submit the placeholder) as the workspace; goal: create `greeting.txt` containing exactly `hello` plus one newline; scope: only that file; out of scope: other files, external services, and publishing; constraints: use the existing model and native permissions, and do not use subagents; acceptance: reread the file and confirm it is the 6 bytes `hello\n`, then report the verification command, exit status, and SHA-256.
 
-## Approvals, cancellation and failures
+Then advance using the identifiers returned by the tools; do not skip steps:
 
-`waiting_approval` and `status_detail.pending_approvals` expose native approval IDs, tools, call IDs and reasons for the current run. Review the full command and approve or reject it in DSH. The bridge has no approval-grant tool and does not change native approval policy, models or permissions. Only native `allowed-once` permits the requested operation. Rejection or an unavailable answerer records a permission failure and prevents acceptance even if the model later claims completion.
+1. Call `bridge_health` first and confirm the expected instance.
+2. `task_submit` returns `task_id`, `revision`, `run.id`, and `event_cursor`. Keep them and retain the original request ID.
+3. Call `task_wait` with the last consumed event cursor. A wait timeout means only that no event arrived during that interval; it is not completion.
+4. Once the task is `awaiting_review`, call `task_evidence` with the current `run.id` starting at cursor 0 and consume **every page**. Also inspect the actual workspace file directly; model statements do not replace verification.
+5. After checking scope and acceptance criteria, call `task_review` with the current revision, current `run_id`, a new request ID, `decision: "accepted"`, a concrete comment, and the evidence IDs from this run. Success means the task reaches `accepted` and is visible in the corresponding native DSH session.
 
-`task_cancel` targets only a matched active run. Queued requests that have not started, completed runs, replacement runs, and sessions with additional queued input reject control. `cancel_requested` / `run.cancellation.status: accepted` acknowledges the request; only an `aborted` ending of that matched turn followed by idle confirms `cancelled` / `confirmed`. If execution wins the race, it still requires review and the cancellation becomes `not_cancelled`. A late cancel cannot stop later work. Cancellation does not roll back effects or release workspace ownership. Inspect effects before explicitly continuing in the same session; successful verification and acceptance release the workspace.
+**Concrete rework example**: if the file actually contains `hello world` plus a newline, first record `changes_requested` with "Expected `hello` plus a single newline; the current content has an extra `world`. Fix it, reread the file, and report the digest", citing the current evidence IDs. Then call `task_continue` with the current `run_id`, `revision`, and a new request ID, requiring the fix and re-verification in the same native session. Wait for the new run, review only the new run's evidence, and only then record `accepted`.
 
-A wait timeout is not completion. For `failed`, `status_detail` distinguishes permission denial, model or execution errors, and other execution failures, with the native ending reason. Provider error bodies and account configuration are excluded. Native `error` can represent either model or execution failure; the bridge does not guess a finer cause. Inspect DSH and run evidence before explicitly continuing a failed or cancelled run with its current ID and revision. `needs_human`, uncertain cancellation outcomes and unexpected native activity require human reconciliation rather than automatic continuation or replay.
+Execution completion (`execution_completed` / `awaiting_review`) and reviewer acceptance (`accepted`) are separate facts. See the [task workflow](docs/TASK_WORKFLOW.md) (Chinese) for field-level definitions, cursor rules, and recovery ordering.
 
-Before upgrading, save task IDs and check for active operations that need preservation. Reload through the DSH Plugins page; if the old version remains loaded, fully quit DSH (including the tray), reopen it and refresh the current client's MCP connection. Check `bridge.version: 0.4.1`, `bridge.phase: 3`, `storage.healthy: true`, `approval_display: true`, `run_scoped_cancel: true` and nine tools including health. After restart, read a snapshot before `task_recover inspect`. Phase 2 continuation records remain readable and unchanged legacy retries retain their original results; new continuations require `run_id`. On load, `0.4.1` repairs the old recovery-event cursor collision: `cursor` retains bridge paging order and `native_cursor` retains the native log position. It does not replay work or change native checkpoints or deduplication records.
+## Why it is designed this way
 
-Removing MCP or the plugin retains the ledger, native sessions and task artifacts. Only consider manually deleting `cd-connect/ledger` under the actual DSH home after fully quitting DSH, resolving tasks and backing up needed records. Deletion removes deduplication and recovery evidence; it is not a fix for repeated requests. See the [workflow guide](docs/TASK_WORKFLOW.md) (Chinese) for detailed scenarios and limits. Live restart recovery covers completed tasks, retained artifact witnesses, log reconciliation and same-session continuation. In-flight crashes, unknown receipts, unavailable approval answerers and model errors are covered by isolated or native-component tests; the existing desktop and real model were not deliberately disrupted to manufacture failures.
+Forwarding a prompt proves only that a message was sent. It does not prove that the task was executed correctly, that the result is still valid at review time, or that a retry will not repeat a side effect. cd-connect therefore makes the unit of collaboration a **task** with goals, scope, exclusions, constraints, and acceptance criteria, rather than a chat message.
+
+The planning and review side decides what to do and what counts as acceptance. The execution side reuses an existing DSH session, tools, and permissions, and is responsible for implementation and verification. Disconnects, restarts, timeouts, and late responses are treated as normal conditions: the bridge persists request identity, the actual session mapping, run IDs, and dispatch receipts. When an outcome cannot be proven, it inspects native logs instead of replaying automatically. Files can change after execution, so acceptance also checks evidence from the current run and the workspace witness captured at completion.
+
+Authorization cannot be produced by a model report or another model output. DSH keeps native human approval, and the bridge only displays approval state; continuation and cancellation must be checked against the current run. The result is a task protocol with explicit boundaries, recovery, and review.
+
+| Original problem | Design choice | Current implementation |
+| --- | --- | --- |
+| The two sides may understand goals and scope differently | Explicit task specification and independent review | [`protocol.js`](src/protocol.js), [`tasks.js`](src/tasks.js) |
+| Receiving a request, finishing execution, and passing review are different | Separate lifecycle and review states | [`tasks.js`](src/tasks.js) |
+| Retries and interruptions may duplicate side effects | Durable request deduplication, dispatch intent and receipts, manual recovery | [`storage.js`](src/storage.js), [`tasks.js`](src/tasks.js) |
+| Old requests may affect later runs | Run IDs, revision checks, and synchronous native control guards | [`tasks.js`](src/tasks.js), [`native.js`](src/native.js) |
+| Completed files may still change | Current-run evidence and workspace witnesses | [`workspace.js`](src/workspace.js), [`tasks.js`](src/tasks.js) |
+| Cross-agent collaboration should not expand authority | Reuse native model and approvals, authenticate locally | [`native.js`](src/native.js), [`plugin.js`](src/plugin.js), [`server.js`](src/server.js) |
+
+```mermaid
+flowchart LR
+    Human["Human"] -->|Goals and authorization| Client["Planning and review client<br/>currently verified: Codex desktop"]
+    Client <-->|MCP stdio| Stdio["Local adapter<br/>src/stdio.js"]
+    subgraph Host["Existing DSH Desktop Host"]
+        Server["MCP server<br/>src/server.js"]
+        Tasks["Task and review manager<br/>src/tasks.js"]
+        Native["Native adapter<br/>src/native.js"]
+        Agent["DSH native session and agent"]
+        Ledger[("Bridge task ledger")]
+        Witness["Workspace witness<br/>src/workspace.js"]
+        NativeLog[("Native session log")]
+        Server <--> Tasks
+        Tasks <--> Native
+        Native <--> Agent
+        Tasks <-->|Persist| Ledger
+        Tasks -->|Check artifacts at completion| Witness
+        Agent --> NativeLog
+        NativeLog -->|Read during recovery| Native
+    end
+    Stdio <-->|Loopback HTTP<br/>independent credential| Server
+    Workspace[("Task workspace")]
+    Agent -->|Run tools| Workspace
+    Witness --> Workspace
+    Human -->|Native approval| Agent
+```
+
+The plugin runs inside the existing Host, and the stdio adapter forwards only tools the Host actually advertises. Task state lives in the plugin; the bridge ledger and native logs serve different purposes. Directory ownership constrains tasks within one bridge store; it is not a system-wide write lock. See the [architecture guide](docs/ARCHITECTURE.md) (Chinese) for component responsibilities and protocol identities.
+
+## Key limits and security boundaries
+
+- **Approval stays in DSH**: `waiting_approval` displays the pending tool, call ID, and reason. The bridge has no approval endpoint and does not change models, permissions, or approval policy. Review the full command in DSH and decide there.
+- **Completion is not acceptance**: native failures, cancellation, blocking, or token limits never become reviewable success. Even if the model claims completion, permission denial or incomplete evidence still prevents acceptance.
+- **Cancellation has a confirmation boundary**: `accepted` only means the cancel request was accepted; it is `confirmed` only after the matched turn ends `aborted` and the agent is idle. Cancellation does not roll back changes or release directory ownership.
+- **Unknown outcomes are not replayed**: after a restart, timeout, missing dispatch receipt, or uncertain cancellation, read the snapshot and use `task_recover` to reconcile native logs. Only an intent proven never attempted may be dispatched explicitly.
+- **Exactly once is not guaranteed**: the bridge reduces duplicate-dispatch risk but cannot prove that arbitrary external side effects happen exactly once. It also cannot prevent or attribute concurrent writes by other processes.
+- **Directory and evidence coverage is bounded**: within one bridge store, unaccepted tasks own the directory and its parent/child paths. The completion witness covers regular-file contents and modes, directory structure, and symlink target text, excludes `.git`, does not follow symlinks, and is capped at 20,000 entries and 128 MiB. External services, symlink target contents, and changes that were later reverted are outside its scope.
+- **The workspace is only a disk cwd**: the submitted directory becomes the new native session's current directory, but the current version does not register or associate it with a DSH sidebar workspace. A new session may appear ungrouped; keep `session_id` and find it through the task mapping.
+- **The local boundary is not a sandbox**: loopback binding, a bearer credential, Host/Origin checks, and file modes protect a local single-user path; they do not isolate untrusted tenants. Do not expose the listener to the internet.
+- **The ledger contains private content**: `tasks.json` stores task text, session mappings, and some tool evidence, while the connection file contains a local credential. Do not commit, upload, or publish the full ledger or connection file. Deleting the ledger removes deduplication and recovery evidence.
+
+## Further documentation and contributing
+
+The detailed guides, security policy, and contribution entry points below are currently **Chinese-only**; the linked CI workflow is configuration. This English README mirrors the support scope, commands, and limits, and marks the language difference here.
+
+- [Installation, connection, upgrade, uninstall, and troubleshooting](docs/INSTALLATION.md)
+- [Architecture, protocol identities, and control boundaries](docs/ARCHITECTURE.md)
+- [Task submission, waiting, evidence, review, cancellation, and recovery](docs/TASK_WORKFLOW.md)
+- [Contributing and validation layers](CONTRIBUTING.md)
+- [Security policy, sensitive data, and private reporting](SECURITY.md)
+- [Agent working entry point](AGENTS.md)
+- [CI workflow](.github/workflows/ci.yml)
 
 ## Related projects
 
@@ -84,5 +180,9 @@ Removing MCP or the plugin retains the ledger, native sessions and task artifact
 - [DSH Linux](https://github.com/M1racleShih/dsh-linux): the initial integration target.
 - [dsh-chatgpt-bridge](https://github.com/jiezeng2004-design/dsh-chatgpt-bridge): a related bridge implementation.
 - [codex-bridge](https://github.com/Fanch-hui/codex-bridge): a bridge supporting multiple executors.
+
+## License
+
+This project is licensed under the MIT License. The full text and copyright notice are in [LICENSE](LICENSE); copyright © 2026 Han-Qing Shi. Third-party dependencies retain their own licenses. See the support table above for the verified Node.js range and basic checks, and the [security policy](SECURITY.md) for private reporting.
 
 cd-connect is an independent project and is not affiliated with or endorsed by OpenAI or DeepSeek.

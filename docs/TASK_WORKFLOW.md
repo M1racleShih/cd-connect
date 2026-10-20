@@ -1,10 +1,12 @@
-# ChatGPT 阶段任务处理说明
+# 阶段任务处理说明
 
-适用于 cd-connect `0.4.1` 与 DSH `0.2.1-rc.2`。八个任务工具（另有健康检查）通过本机 HTTP 和 stdio MCP 提供；实际执行复用原生 Desktop Host。不得使用此流程推断新的人工授权。
+适用于 cd-connect `0.4.1` 与 DSH `0.2.1-rc.2`。桥接提供八个任务工具，另有只读的 `bridge_health`，共九个工具，通过本机 HTTP 和 stdio MCP 提供；实际执行复用原生 Desktop Host。不得使用此流程推断新的人工授权。
+
+相关文档：[中文 README](../README.md) · [English README](../README.en.md) · [安装与维护](INSTALLATION.md) · [架构与边界](ARCHITECTURE.md)。本文档当前为中文。
 
 ## 提交与执行
 
-先调用 `bridge_health`，确认 `bridge.phase: 3`、`task_execution: true` 和预期的实例。提交前准备已存在的绝对工作目录，以及 `goal`、`scope`、`out_of_scope`、`constraints`、`acceptance`。其中除 `out_of_scope` 外，各列表至少一项。每项文本最多 4000 字符，每个列表最多 20 项；整个 HTTP 请求最多 16 KiB，因此提交内容还需满足总量限制。不接受模型、权限或任意原生会话编号参数。
+先调用 `bridge_health`，确认 `profile: desktop`、`bridge.version: 0.4.1`、`bridge.phase: 3`、`task_execution: true`、`storage.healthy: true` 和预期的实例。提交前准备已存在的绝对工作目录，以及 `goal`、`scope`、`out_of_scope`、`constraints`、`acceptance`。其中除 `out_of_scope` 外，各列表至少一项。每项文本最多 4000 字符，每个列表最多 20 项；整个 HTTP 请求最多 16 KiB，因此提交内容还需满足总量限制。不接受模型、权限或任意原生会话编号参数。
 
 示例：
 
@@ -12,15 +14,17 @@
 {
   "request_id": "greeting-submit-1",
   "workspace": "/tmp/cd-connect-acceptance-example",
-  "goal": "创建 greeting.txt",
+  "goal": "创建 greeting.txt，内容恰为 hello 加一个换行",
   "scope": ["仅修改 greeting.txt"],
-  "out_of_scope": ["其他目录、外部服务与发布"],
-  "constraints": ["不使用子 agent，保留原生权限，有歧义时报告"],
-  "acceptance": ["UTF-8 文件内容为 hello 加换行；报告验证命令、退出状态和摘要"]
+  "out_of_scope": ["其他文件、外部服务与发布"],
+  "constraints": ["使用现有模型和原生权限", "不使用子 agent", "有歧义时停止并报告"],
+  "acceptance": ["UTF-8 内容为 hello 加一个换行（6 字节）", "报告验证命令、退出状态与 SHA-256"]
 }
 ```
 
-`task_submit` 创建普通原生会话，保存 DSH 实际返回的 `session_id`，再将任务排入该会话。提交返回接收状态，不代表执行完毕。DSH 对任务的理解、歧义和验证结果通过原生助手消息提供，不是提交时已完成的模型分析。
+示例目录必须在提交前创建（可用 `workspace=$(mktemp -d)`），`workspace` 必须是该目录的实际绝对路径。`request_id` 是跨重启稳定的幂等键，不是展示名称。
+
+`task_submit` 创建普通原生会话，保存 DSH 实际返回的 `session_id`，再将任务排入该会话。提交返回接收状态，不代表执行完毕。DSH 对任务的理解、歧义和验证结果通过原生助手消息提供，不是提交时已完成的模型分析。`workspace` 只是原生会话的磁盘 cwd；当前版本不会把它注册或关联为 DSH 侧栏工作区，新会话可能显示在未分组列表中。请保存 `session_id` 并按任务映射查找。
 
 保存 `task_id`、`revision`、`runtime_id`、`session_id`、`run.id` 和 `event_cursor`。请求编号使用 1–160 个字母、数字或 `_.:-` 字符。跨插件重载与重启，一个编号只对应一种请求；原样重试返回首次结果快照，应再用 `task_get` 读取最新状态。修改内容时必须使用新编号。
 
@@ -54,7 +58,14 @@
 
 返工后，以返回的新版本调用 `task_continue`，携带当前 `run_id`、新请求编号和明确的 `instruction`。桥接要求原生会话空闲、目录匹配，续写使用同一 `session_id` 和新的运行编号。旧运行证据不能用于新运行审查。接受后的续写也必须遵守已有规格；目标或授权范围变化时提交新的任务。
 
-示例修正：把 `greeting.txt` 改为 `hello world` 加换行，重新读取文件并验证内容，报告验证命令、退出状态和新摘要。继续等待，审查新证据，再记录最终通过。
+一次完整通过至少应确认：
+
+- `bridge_health` 指向预期实例，`storage.healthy` 为 `true`；
+- 任务确实出现在对应的 DSH 原生会话中；
+- `task_evidence` 已覆盖当前运行的全部页，实际产物与验收条件一致；
+- `task_review` 后任务为 `accepted`，且引用的证据属于当前运行。
+
+示例修正：若首轮把 `greeting.txt` 写成 `hello world` 加换行，而验收要求是 `hello` 加换行，先以 `changes_requested` 记录“应为 `hello` 加单个换行，当前多出 `world`；请修正后重新读取并报告摘要”，附上当前证据编号；再用当前 `run_id`、版本和新请求编号调用 `task_continue`，要求在同一原生会话中修正并重新验证。继续等待，只审查新运行的证据，最后才记录 `accepted`。
 
 ## 持久化与手动恢复
 
@@ -107,7 +118,7 @@
 
 `status_detail.category` 在审批时为 `human_approval_required`，取消等待为 `cancellation_pending`，确认取消为 `cancelled`；失败时为 `permission_denied`、`model_or_execution_error` 或 `execution_failed`。`native_end_reason` 保留 `error`、`blocked`、`max-tokens`、`interrupted` 等原生原因；不输出原始提供方错误正文。原生 `error` 不足以区分模型与工具执行时不猜测。`needs_human` 保留具体核对原因；不能通过失败续写路径绕过意外原生活动、存储故障或结果不明的动作。
 
-升级时先保存任务编号，检查现有工作，通过插件页重载或完全退出再打开 DSH，并刷新客户端 MCP 连接。实际健康响应应为版本 `0.4.1`、阶段 3、健康持久存储和九个工具。阶段 2 账本与旧续写请求可加载，原样旧请求重试不会再次执行；新的续写请求必须显式提供 `run_id`。移除连接或插件保留账本；不要在线删除存储锁、账本或原生会话来处理错误。安装、连接与卸载命令见中英文 README。
+升级时先保存任务编号，检查现有工作，通过插件页重载或完全退出再打开 DSH，并刷新客户端 MCP 连接。实际健康响应应为版本 `0.4.1`、阶段 3、健康持久存储和九个工具。阶段 2 账本与旧续写请求可加载，原样旧请求重试不会再次执行；新的续写请求必须显式提供 `run_id`。移除连接或插件保留账本；不要在线删除存储锁、账本或原生会话来处理错误。安装、连接与卸载命令见[安装与维护](INSTALLATION.md)。
 
 ## 容量与边界
 
@@ -115,4 +126,4 @@
 - 最多 100 个任务、2000 个变更请求、每任务 20 次运行、每轮最多 50000 个原生事件检查点、50 个审批请求。容量满时停止新增，不通过删除去重记录或重启绕过。归档工具不在本阶段范围内；迁移存储前先完成并保留核对记录。
 - 重复原生事件不重复计入证据；同序号内容冲突、日志回退或缺口会阻止验收，缺口可显式从日志补齐。恢复读取期间原生已继续前进时，需用新的恢复请求再检查一次。
 - 从阶段 1 升级不会凭空导入此前仅存内存的任务。原生会话与既有实施记录仍可供人工核对，不能重新提交当作未执行过。
-- 不保证任意外部副作用恰好发生一次（exactly-once）；不提供模型切换、审批批准或无人值守自动恢复。当前桌面的人工批准/拒绝、权限失败、取消确认和迟到控制已完成实机验收；持久任务跨实际 DSH 重启的冷日志核对与同会话继续已通过；`0.4.1` 的恢复事件分页修复也已在当前桌面重载后逐页核对通过。
+- 不保证任意外部副作用恰好发生一次（exactly-once）；不提供模型切换、审批批准或无人值守自动恢复。是否满足验收条件，应以当前运行在目标环境中的证据为准。

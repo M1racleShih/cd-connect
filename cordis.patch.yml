@@ -1,0 +1,5 @@
+- insert:
+    - id: cd-connect
+      name: cd-connect
+      config:
+        port: 48763

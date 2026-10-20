@@ -40,7 +40,12 @@ export function nativeAdapter(ctx) {
       guard(sessionId, expected, true);
       return controller.cancel({ sessionId });
     },
-    create: (cwd, sessionId) => controller.create({ cwd, ...(sessionId ? { sessionId } : {}) }),
+    create: async (cwd, sessionId) => {
+      // The native registry reuses canonical paths and preserves existing titles.
+      // Creating with workspaceId lets DSH attach the session before returning.
+      const workspace = await ctx.get('workspaceRegistry').create(cwd);
+      return controller.create({ workspaceId: workspace.id, ...(sessionId ? { sessionId } : {}) });
+    },
     prompt: (sessionId, requestId, text) => controller.prompt({
       sessionId, requestId, mode: 'queue', content: [{ type: 'text', text }],
     }, new AbortController().signal),

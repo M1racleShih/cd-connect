@@ -28,6 +28,9 @@ test('native cold startup waits for session services before activating the bridg
   ctx.provide('sessions', {});
   ctx.provide('sessionController', {});
   ctx.provide('sessionQuery', {});
+  await new Promise(resolve => setImmediate(resolve));
+  await assert.rejects(stat(discovery), { code: 'ENOENT' });
+  ctx.provide('workspaceRegistry', {});
   await loading;
   const client = await connectHealth(join(dir, 'cd-connect'));
   try {
@@ -148,4 +151,48 @@ test('actual native AgentLoop accepts guarded text continuation and confirms can
   await agent.whenIdle();
   assert.equal(agent.status, 'idle'); assert.equal(agent.session.snapshotEvents().at(-1).data.reason.kind, 'aborted');
   assert.throws(() => adapter.cancel(agent.id, { cwd: agent.session.header.cwd, cursor: agent.session.seq - 1, turn: start.data.turn, request_id: 'owned-native-request' }), /native_run_changed/);
+});
+
+test('native workspace registry reuses canonical directories and persists session membership', { skip: !source, timeout: 10000 }, async t => {
+  const load = file => import(pathToFileURL(join(source, file)).href);
+  const [{ Context }, { default: Storage }, json, domain, { default: Registry }, { nativeAdapter }] = await Promise.all([
+    load('vendor/cordis/lib/index.js'), load('packages/storage/storage/lib/index.js'),
+    load('packages/storage/storage-json/lib/index.js'), load('packages/storage/storage-domain/lib/index.js'),
+    load('packages/workspace/workspace/lib/index.js'), import('../src/native.js'),
+  ]);
+  const dir = await mkdtemp(join(tmpdir(), 'cd-connect-workspace-'));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  const cwd = join(dir, 'project'); await mkdir(cwd);
+  const headers = new Map();
+  const make = async () => {
+    const ctx = new Context();
+    await ctx.plugin(Storage);
+    await ctx.plugin(json, { root: join(dir, 'storage') });
+    await ctx.plugin(domain, { backend: 'json', routes: {} });
+    ctx.provide('sessionPersistence', { list: async () => [...headers.values()].map(header => ({ header, revision: 'fixture' })) });
+    ctx.provide('sessions', { get: id => headers.has(id) ? { header: headers.get(id) } : undefined, list: () => [] });
+    await ctx.plugin(Registry);
+    ctx.provide('agents', {});
+    // Controller fixture follows the native create contract; registry and storage are real.
+    ctx.provide('sessionController', { create: async ({ workspaceId, sessionId }) => {
+      const workspace = ctx.workspaceRegistry.get(workspaceId);
+      headers.set(sessionId, { id: sessionId, cwd: workspace.path, createdAt: 1, version: 1, isSeeded: false });
+      await workspace.attachSession(sessionId);
+      return { sessionId };
+    } });
+    return ctx;
+  };
+  let ctx = await make();
+  try {
+    const adapter = nativeAdapter(ctx);
+    await adapter.create(cwd, 'first');
+    const workspace = ctx.workspaceRegistry.list()[0];
+    await adapter.create(join(cwd, '..', 'project'), 'second');
+    assert.equal(ctx.workspaceRegistry.list().length, 1);
+    assert.deepEqual(workspace.sessionIds, ['second', 'first']);
+    const id = workspace.id;
+    await ctx.fiber.dispose(); ctx = await make();
+    assert.equal(ctx.workspaceRegistry.list()[0].id, id);
+    assert.deepEqual(ctx.workspaceRegistry.get(id).sessionIds, ['second', 'first']);
+  } finally { await ctx.fiber.dispose(); }
 });

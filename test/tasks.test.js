@@ -57,7 +57,7 @@ test('submit, execution completion, evidence, concrete rework, same-session cont
   let task = await f.submit();
   assert.equal(task.session_id, f.native.session);
   assert.equal(task.state, 'running');
-  assert.match(f.native.prompts[0].text, /acceptance/);
+  assert.match(f.native.prompts[0].text, /Acceptance criteria/);
   assert.match(f.native.prompts[0].text, /Do not delegate/);
   assert.equal(f.native.prompts.length, 1);
   f.native.begin(); f.native.assistant(); f.native.finish();
@@ -79,7 +79,8 @@ test('submit, execution completion, evidence, concrete rework, same-session cont
   assert.equal(task.revision, 3);
   assert.equal(f.native.prompts.length, 2);
   assert.notEqual(f.native.prompts[0].request, f.native.prompts[1].request);
-  assert.match(f.native.prompts[1].text, /hello world/);
+  assert.match(f.native.prompts[1].text, /## Continuation instruction\n\nChange hello to hello world and rerun checks\./);
+  for (const value of [f.spec.goal, ...f.spec.scope, ...f.spec.out_of_scope, ...f.spec.constraints, ...f.spec.acceptance]) assert.ok(f.native.prompts[1].text.includes(value));
   f.native.begin(); f.native.assistant(); f.native.finish(); f.native.idle();
   task = await f.get(task);
   const finalEvidence = (await f.evidence(task)).items;
@@ -210,10 +211,10 @@ test('native adapter uses public create/prompt with queue mode, leaves model and
   const calls = [];
   let stopped = 0;
   const controller = { create: async args => { calls.push(args); return { sessionId: 'actual' }; }, prompt: async (args, signal) => { calls.push(args); assert.equal(signal.aborted, false); return { accepted: true }; } };
-  const adapter = nativeAdapter({ get: key => ({ sessionController: controller, agents: { get: () => ({ status: 'idle', session: { header: { cwd: '/tmp' } } }) }, sessions: {} })[key], on: () => () => { stopped++; } });
+  const adapter = nativeAdapter({ get: key => ({ workspaceRegistry: { create: async cwd => { assert.equal(cwd, '/tmp'); return { id: 'workspace-fixture' }; } }, sessionController: controller, agents: { get: () => ({ status: 'idle', session: { header: { cwd: '/tmp' } } }) }, sessions: {} })[key], on: () => () => { stopped++; } });
   assert.equal((await adapter.create('/tmp')).sessionId, 'actual');
   await adapter.prompt('actual', 'request', 'hello');
-  assert.deepEqual(calls, [{ cwd: '/tmp' }, { sessionId: 'actual', requestId: 'request', mode: 'queue', content: [{ type: 'text', text: 'hello' }] }]);
+  assert.deepEqual(calls, [{ workspaceId: 'workspace-fixture' }, { sessionId: 'actual', requestId: 'request', mode: 'queue', content: [{ type: 'text', text: 'hello' }] }]);
   assert.deepEqual(adapter.status('actual'), { status: 'idle', cwd: '/tmp' });
   adapter.subscribe(() => {})();
   assert.equal(stopped, 4);
@@ -291,4 +292,54 @@ test('bounded reads remain available while a native receipt is delayed', async t
   const waiting = await f.manager.call('task_wait', { task_id, cursor: snapshot.event_cursor, timeout_ms: 5 });
   assert.equal(waiting.timed_out, true); assert.equal(waiting.task.state, 'dispatching');
   release(); assert.equal((await submitting).state, 'running');
+});
+
+test('native workspace creation preserves requested identity and never falls back to an ungrouped session', async () => {
+  for (const failure of ['registry', 'attachment', 'missing-service', null]) {
+    const calls = [];
+    const adapter = nativeAdapter({ get: key => ({
+      sessions: {}, agents: {},
+      workspaceRegistry: failure === 'missing-service' ? undefined : { create: async path => {
+        calls.push(['workspace', path]);
+        if (failure === 'registry') throw new Error('registry failed');
+        return { id: 'existing-workspace' };
+      } },
+      sessionController: { create: async args => {
+        calls.push(['session', args]);
+        if (failure === 'attachment') throw new Error('attachment failed');
+        return { sessionId: 'actual-native-id' };
+      } },
+    })[key] });
+    const result = adapter.create('/tmp/workspace-example', 'requested-id');
+    if (failure) await assert.rejects(result);
+    else assert.deepEqual(await result, { sessionId: 'actual-native-id' });
+    assert.equal(calls.filter(([kind]) => kind === 'session').length, ['registry', 'missing-service'].includes(failure) ? 0 : 1);
+    if (calls.at(-1)?.[0] === 'session') assert.deepEqual(calls.at(-1)[1], { workspaceId: 'existing-workspace', sessionId: 'requested-id' });
+  }
+});
+
+
+test('Markdown task description retains every requirement, multiline content and empty exclusions', async t => {
+  const f = await fixture(t);
+  Object.assign(f.spec, {
+    goal: '保留 "引号"、`代码` 与路径 /tmp/example\n第二行目标',
+    scope: ['第一项\n补充说明\n\n继续说明', '第二项'],
+    out_of_scope: [], constraints: ['禁止提交 Git', '不得扩大权限'],
+    acceptance: ['执行检查并报告退出状态'],
+  });
+  const task = await f.submit();
+  const text = f.native.prompts[0].text;
+  assert.ok(text.includes(f.spec.goal));
+  assert.ok(text.includes(`## Working directory\n\n${f.workspace}`));
+  for (const field of ['scope', 'constraints', 'acceptance']) {
+    for (const item of f.spec[field]) assert.ok(text.includes(`- ${item.replace(/\n/g, '\n  ')}`));
+  }
+  assert.ok(text.includes('## Out of scope\n\n(None specified.)'));
+  assert.ok(text.includes(`revision 1, run ${task.run.id}`));
+  assert.ok(!text.includes('## Continuation instruction'));
+  assert.ok(!text.includes('The following JSON'));
+  assert.match(text, /Do not claim reviewer acceptance/);
+  const retry = await f.submit();
+  assert.equal(retry.task_id, task.task_id);
+  assert.equal(f.native.prompts.length, 1);
 });

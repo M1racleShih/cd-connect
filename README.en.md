@@ -188,3 +188,9 @@ The detailed guides, security policy, and contribution entry points below are cu
 This project is licensed under the MIT License. The full text and copyright notice are in [LICENSE](LICENSE); copyright © 2026 Han-Qing Shi. Third-party dependencies retain their own licenses. See the support table above for the verified Node.js range and basic checks, and the [security policy](SECURITY.md) for private reporting.
 
 cd-connect is an independent project and is not affiliated with or endorsed by OpenAI or DeepSeek.
+
+## Experimental event coordinator
+
+An explicitly started local program can move `task_wait` waiting outside model turns. It attempts at most one review turn in a dedicated Codex chat when the exact bound task/run/revision reaches `awaiting_review`. Ordinary progress and native approval waits start no model turns. This is a Linux, local single-user experiment using Codex app-server stdio with inherited native model and permission policies. Evidence review produces a recommendation; it never automatically accepts, continues, cancels, or recovers a task.
+
+The CLI provides `init/run/status/stop/rearm/reconcile`. See the [event coordinator guide (Chinese)](docs/EVENT_COORDINATOR.md) for foreground startup, graceful stopping, dedicated chat ownership, uncertain-delivery reconciliation, and limits. Rearming the same binding preserves its cursor. Unknown lifecycle receipts require explicit read-only reconciliation; unresolved reviews on stop return nonzero, while historical terminal failures do not fail a successful new binding. Ordinary clients keep the existing `task_wait` workflow. No service installation or scheduled model polling is included; account-wide zero usage is not promised.

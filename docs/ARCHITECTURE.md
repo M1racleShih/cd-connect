@@ -143,3 +143,7 @@ HTTP 服务只监听 `127.0.0.1`，只接受 `POST /mcp`，校验精确 Host、�
 | `.github/workflows/ci.yml` | Linux 上 Node.js `22.19.0`/`24.18.0` 的依赖安装、默认测试与递归语法检查 | Hosted CI 执行记录、原生组件测试、真实桌面与目标客户端独立验收 |
 
 默认测试会跳过需要 `CD_CONNECT_DSH_SOURCE` 的原生组件测试；CI 只运行默认测试和递归语法检查。验证分层与未覆盖项见[贡献指南](../CONTRIBUTING.md)。
+
+## 显式事件协调器
+
+`src/coordinator/` 与 `scripts/event-coordinator.js` 是独立前台程序，不随插件启动，不修改任务状态机。私有协调器账本保存完整绑定、消费游标、发送意图与回合结果；桥接只有只读访问。Codex 使用独立 stdio 子进程和专用聊天，发送前持久栅栏、不确定结果不重放。原生审批不自动答复，执行完成与人工验收继续分离。CLI、只读证据入口、所有权与故障限制见[事件协调器](EVENT_COORDINATOR.md)。

@@ -188,3 +188,9 @@ flowchart LR
 本项目采用 MIT 许可证，完整文本与版权声明见 [LICENSE](LICENSE)，版权 © 2026 Han-Qing Shi。第三方依赖保留各自的许可；支持的 Node.js 版本与基础验证范围见上文，安全报告方式见[安全策略](SECURITY.md)。
 
 cd-connect 是独立项目，与 OpenAI 或 DeepSeek 不存在官方隶属或背书关系。
+
+## 实验性事件协调器
+
+可显式运行独立本地协调器，把 `task_wait` 等待移出模型；仅当前完整绑定进入 `awaiting_review` 时，最多尝试一次唤醒专用 Codex 审查聊天。审批等待和普通进度不启动模型。仅 Linux 本地单用户，使用实验性 Codex app-server stdio，保留原生模型与权限策略。结果为只读证据审查建议，不自动接受、续写、取消或恢复任务。
+
+CLI 支持 `init/run/status/stop/rearm/reconcile`；前台启动、正常停止、专用聊天所有权、不确定发送核对与限制见[事件协调器](docs/EVENT_COORDINATOR.md)。同绑定 rearm 保留消费游标；回执未知可显式只读核对生命周期，停止未核清审查返回非零，旧终态失败不影响新绑定成功。普通客户端仍按原有 `task_wait` 流程操作；不安装服务或定时模型轮询，不保证账号零用量。

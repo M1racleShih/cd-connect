@@ -10,7 +10,7 @@ import { TaskManager } from './tasks.js';
 import { TOOL_NAMES } from './protocol.js';
 
 export const name = 'cd-connect';
-export const inject = ['profileContext', 'pluginPackages', 'sessionController', 'agents', 'sessions', 'sessionQuery'];
+export const inject = ['profileContext', 'pluginPackages', 'sessionController', 'agents', 'sessions', 'sessionQuery', 'workspaceRegistry'];
 
 /** Report launcher-owned facts and an actual runtime artifact digest, without configuration contents. */
 export async function runtimeIdentity(ctx) {
@@ -55,6 +55,7 @@ export async function apply(ctx, config = {}) {
           agents: !!ctx.get('agents'),
           sessions: !!ctx.get('sessions'),
           session_query: !!ctx.get('sessionQuery'),
+          workspace_registry: !!ctx.get('workspaceRegistry'),
           user_approval: !!ctx.get('approval'),
         },
       },

@@ -5,7 +5,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { TASK_INSTRUCTIONS, TASK_TOOLS, toolResult } from './protocol.js';
 
-export const BRIDGE_VERSION = '0.4.1';
+export const BRIDGE_VERSION = '0.5.0';
 
 /** A health-only server remains available for transport fixtures. */
 export function healthServer(readHealth, tasks, availableTools = Object.keys(TASK_TOOLS)) {

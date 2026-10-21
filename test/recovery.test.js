@@ -382,3 +382,25 @@ test('cursor migration refuses unrelated event-order damage instead of repairing
   assert.throws(() => f.open('two'), /storage_corrupt_or_wrong_instance/);
   assert.equal(f.native.data.prompts, 1);
 });
+
+test('prepared legacy JSON prompt is dispatched verbatim after restart without regenerating its digest', async t => {
+  const f = await fixture(t);
+  const child = spawnSync(process.execPath, [resolve('scripts/fault-worker.js'), f.dir, f.workspace, 'prompt-prepared'], { encoding: 'utf8' });
+  assert.equal(child.status, 73, child.stderr);
+  const path = join(f.stateDir, 'tasks.json');
+  const { data } = JSON.parse(await readFile(path, 'utf8'));
+  const stored = data.tasks[0];
+  const text = `The following JSON is the authorized task specification:\n${JSON.stringify(stored.spec, null, 2)}\nLegacy handoff instructions.`;
+  for (const run of [stored.run, stored.runs.at(-1)]) {
+    run.text = text; run.text_sha256 = sha256(text);
+  }
+  await writeFile(path, JSON.stringify({ checksum: sha256(canonical(data)), data }));
+  f.native.reload(); f.open('new-template-runtime');
+  let task = await f.recover(await f.get({ task_id: stored.id }));
+  assert.equal(f.native.data.prompts, 0);
+  task = await f.recover(task, 'dispatch_prepared');
+  assert.equal(task.state, 'running');
+  assert.equal(f.native.data.text, text);
+  const saved = JSON.parse(await readFile(path, 'utf8')).data.tasks[0].run;
+  assert.equal(saved.text, text); assert.equal(saved.text_sha256, sha256(text));
+});

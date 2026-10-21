@@ -1,8 +1,10 @@
 # 安装、连接与维护
 
-适用 cd-connect `0.4.1` 与 DSH Desktop `0.2.1-rc.2`。本文覆盖正常安装、Desktop CLI 替代路径、升级、卸载、故障恢复与数据边界。任务字段和恢复协议见[任务处理说明](TASK_WORKFLOW.md)，组件职责见[架构说明](ARCHITECTURE.md)，功能概览见[中文 README](../README.md)或[English README](../README.en.md)。
+[中文](INSTALLATION.md) · [English](INSTALLATION.en.md)
 
-本文档当前为中文。英文 README 同步了支持范围、命令和限制，并明确标注深入文档的语言。
+适用 cd-connect `0.5.0` 与 DSH Desktop `0.2.1-rc.2`。本文覆盖正常安装、Desktop CLI 替代路径、升级、卸载、故障恢复与数据边界。任务字段和恢复协议见[任务处理说明](TASK_WORKFLOW.md)，组件职责见[架构说明](ARCHITECTURE.md)，功能概览见[中文 README](../README.md)或[English README](../README.en.md)。
+
+本页及所引用的项目指南均提供中英文版本；可通过页首链接切换语言。
 
 ## 1. 前提与支持范围
 
@@ -32,7 +34,7 @@ npm test
 npm run check
 ```
 
-项目没有构建步骤，`--ignore-scripts` 与现有安装流程一致。`npm test` 默认会跳过需要 DSH 源码的原生组件测试；`npm run check` 递归检查 `src/`、`scripts/`、`test/`（含 `test/support/`）中的 `.js` 文件，不解析类型。CI 在 Linux 上覆盖 Node.js `22.19.0` 与 `24.18.0` 的同样基础检查，执行结果以仓库 Actions 记录为准。需要完整验证分层时见[贡献指南](../CONTRIBUTING.md)。
+项目没有构建步骤，`--ignore-scripts` 与现有安装流程一致。`npm test` 默认会跳过需要 DSH 源码的原生组件测试；`npm run check` 递归检查 `src/`、`scripts/`、`test/`（含 `test/support/`）中的 `.js` 文件，不解析类型。CI 在 Linux 上覆盖 Node.js `22.19.0` 与 `24.18.0` 的同样基础检查，并运行双语文档检查；执行结果以仓库 Actions 记录为准。需要完整验证分层时见[贡献指南](../CONTRIBUTING.md)。
 
 ### 2.2 通过 DSH 插件页加载
 
@@ -64,7 +66,7 @@ npm run check
 npm run health
 ```
 
-正常结果应包含 `profile: "desktop"`、`bridge.version: "0.4.1"`、`bridge.phase: 3`、`storage.healthy: true`、`capabilities.task_execution: true` 和九个工具。`native_services` 只表示服务已注册，不能单独证明任务路径可用。
+正常结果应包含 `profile: "desktop"`、`bridge.version: "0.5.0"`、`bridge.phase: 3`、`storage.healthy: true`、`capabilities.task_execution: true` 和九个工具。`native_services` 只表示服务已注册，不能单独证明任务路径可用。
 
 再注册已实测的 Codex 桌面客户端：
 
@@ -122,12 +124,12 @@ dsh plugin --profile desktop remove cd-connect
 1. 在 DSH 插件页重新加载或更新 bundle。
 2. 若仍显示旧版本，完全退出 DSH（包括托盘）后重新打开。
 3. 刷新目标客户端的 MCP 连接。stdio 适配器在启动时读取工具目录，插件更新后必须重启/刷新适配器。
-4. 调用 `bridge_health`，确认 `bridge.version: "0.4.1"`、`bridge.phase: 3`、`storage.healthy: true`、`capabilities.tools` 为九个工具，且 `approval_display`、`run_scoped_cancel` 为 `true`。
+4. 调用 `bridge_health`，确认 `bridge.version: "0.5.0"`、`bridge.phase: 3`、`storage.healthy: true`、`capabilities.tools` 为九个工具，且 `approval_display`、`run_scoped_cancel` 为 `true`。
 5. 任务跨插件重载和 DSH 重启保留。读取任务时先 `task_get`；状态为 `needs_recovery` 时再用当前版本和新请求编号调用 `task_recover`，并显式使用 `action: inspect` 核对原生日志。
 
 `runtime_id` 每次插件激活都会变化，`instance_id` 由 Host 与 profile 路径决定，跨重载保持稳定。升级后不要用旧运行编号继续或取消新运行。
 
-`0.4.1` 会修复旧恢复事件中的游标覆盖：桥接事件 `cursor` 保持分页顺序，原生日志位置保存在 `native_cursor`；加载时只修复已知形状，不重放执行，也不改请求去重记录。旧账本中其他事件顺序损坏仍会拒绝加载。
+`0.4.1` 会修复旧恢复事件覆盖桥接游标的问题：桥接事件 `cursor` 保持分页顺序，原生日志位置保存在 `native_cursor`；加载时只修复已知形状，不重放执行，也不改请求去重记录。旧版任务记录中其他事件顺序损坏仍会拒绝加载。
 
 ## 5. 卸载与数据保留
 
@@ -141,11 +143,11 @@ codex mcp remove cd-connect
 
 移除连接或插件**不会删除**：
 
-- `cd-connect/ledger/` 中的任务账本与请求去重记录；
+- `cd-connect/ledger/` 中的任务记录与请求去重记录；
 - DSH 原生会话和原生日志；
 - 任务工作目录中的产物。
 
-只有在完全退出 DSH、确认任务已妥善处理并备份所需记录后，才考虑手动删除实际 DSH home 中的 `cd-connect/ledger`。删除会失去去重与恢复依据，不应作为修复重复请求或存储错误的方法。不要在进程运行期间删除 `tasks.lock`、`tasks.lock.acquiring` 或账本。
+只有在完全退出 DSH、确认任务已妥善处理并备份所需记录后，才考虑手动删除实际 DSH home 中的 `cd-connect/ledger`。删除会失去去重与恢复依据，不应作为修复重复请求或存储错误的方法。不要在进程运行期间删除 `tasks.lock`、`tasks.lock.acquiring` 或任务记录。
 
 ## 6. 常见故障
 
@@ -155,7 +157,7 @@ codex mcp remove cd-connect
 | 目标会话看不到工具或工具仍是旧的 | 客户端 MCP 连接是否刷新、stdio 适配器是否重启、插件是否加载新版 | 重载插件，刷新/重启 MCP 连接，直接调用 `bridge_health` |
 | 插件加载报端口冲突 | `48763` 是否被占用、是否配置了重复端口 | 停用冲突进程或修改原生 `port`，再重新加载 |
 | 插件加载报存储锁相关错误 | 是否有其他 live 进程持有 `tasks.lock`、是否有遗留 `tasks.lock.acquiring` | 不要抢占活跃锁；确认所有写入者退出后再人工处理 |
-| `storage_corrupt_or_wrong_instance_manual_check_required` | DSH home 是否变化、账本是否被手工修改、校验和是否匹配 | 保留现场并备份，人工核对；不要直接删账本“修复” |
+| `storage_corrupt_or_wrong_instance_manual_check_required` | DSH home 是否变化、任务记录是否被手工修改、校验和是否匹配 | 保留现场并备份，人工核对；不要直接删任务记录“修复” |
 | 连接文件权限错误 | 权限是否含组/其他位、所有者是否当前用户 | 改回 `0600` 并确认所有者；不要放宽读取范围 |
 | `revision_conflict` / `run_conflict` | 快照版本与当前 `run_id` 是否最新 | 重新 `task_get`，使用当前版本和当前运行；不要复用旧控制 |
 | `needs_recovery` | 插件是否刚重载、原生日志是否仍可读 | 先快照，再 `task_recover` + `inspect`；不自动重放 |
@@ -164,14 +166,14 @@ codex mcp remove cd-connect
 | 审批状态一直等待 | 审批是否真的在 DSH 中待处理 | 在 DSH 界面核对完整命令并批准/拒绝；桥接没有批准接口 |
 | `native_run_changed_control_rejected` | 会话目录、运行轮次、队列或用户输入是否变化 | 重新读取当前状态；不要重试针对旧运行的控制 |
 
-无法确认时，优先保留账本、原生日志和产物，记录具体时间、任务编号与错误码，再请人工核对。不要通过删除锁、清空账本或重发未知动作来“恢复”。
+无法确认时，优先保留任务记录、原生日志和产物，记录具体时间、任务编号与错误码，再请人工核对。不要通过删除锁、清空任务记录或重发未知动作来“恢复”。
 
 ## 7. 数据、隐私与安全边界
 
 - **连接凭据**：`connection.json` 含随机 Bearer token 和本机 URL，权限 `0600`；适配器只读取桥接自己的文件，不读取 DSH 账号秘密。
-- **任务账本**：`tasks.json` 保存任务正文、实际会话映射、部分工具证据、审查记录和请求哈希。它可能包含私有代码、路径和业务内容，应按本地私有数据处理。
-- **原生日志与产物**：DSH 原生会话、原生日志和任务工作目录由 DSH/用户管理，不在桥接账本内。桥接只保存证据索引、摘要和目录见证，不复制完整日志或文件内容。
-- **删除与保留**：卸载不删除数据；手动删除账本会失去请求去重、恢复和审查依据。迁移或删除前先完成核对并备份。
+- **任务记录**：`tasks.json` 保存任务正文、实际会话映射、部分工具证据、审查记录和请求哈希。它可能包含私有代码、路径和业务内容，应按本地私有数据处理。
+- **原生日志与产物**：DSH 原生会话、原生日志和任务工作目录由 DSH/用户管理，不在桥接任务记录内。桥接只保存证据索引、摘要和目录见证，不复制完整日志或文件内容。
+- **删除与保留**：卸载不删除数据；手动删除任务记录会失去请求去重、恢复和审查依据。迁移或删除前先完成核对并备份。
 - **网络边界**：服务只监听 `127.0.0.1`，校验 Host 与 Origin，要求 Bearer 凭据，限制请求体为 16 KiB。它仍是本机单用户工具，不是不可信多租户沙箱，也没有公网暴露方案。
 - **权限边界**：桥接不改变模型、工具权限或 DSH 原生审批策略，不提供批准、模型切换或额外子 agent 授权。任务内容不能扩大授权。
 - **证据边界**：目录见证只覆盖普通文件内容/权限、目录结构和符号链接目标文本，排除 `.git`，不跟随符号链接，上限 20000 个条目与 128 MiB；不能证明外部服务或修改后恢复的历史。
@@ -184,7 +186,7 @@ codex mcp remove cd-connect
 
 - `npm test` 运行隔离测试；未设置 `CD_CONNECT_DSH_SOURCE` 时，需要 DSH 源码的原生组件测试会跳过。跳过不等于通过。
 - `npm run check` 递归检查 `src/`、`scripts/`、`test/`（含 `test/support/`）的 `.js` 语法，不是类型检查。
-- `.github/workflows/ci.yml` 在 Linux 上覆盖 Node.js `22.19.0` 与 `24.18.0` 的依赖安装、默认测试和递归语法检查；执行结果以仓库 Actions 记录为准。CI 不包含原生组件测试。
+- `.github/workflows/ci.yml` 在 Linux 上覆盖 Node.js `22.19.0` 与 `24.18.0` 的依赖安装、默认测试、递归语法检查和双语文档检查；执行结果以仓库 Actions 记录为准。CI 不包含原生组件测试。
 - `npm run health` 验证本机连接与健康响应；`npm run verify:native` 验证本地 HTTP/stdio 两条 SDK 路径。两者都需要正在运行的 Desktop，且都不是目标客户端验收。
 - 目标会话中的 `bridge_health`、一次完整任务闭环和人工审查，只能在目标客户端执行。
 - 默认测试和 CI 不覆盖原生组件测试（需要匹配的 DSH 源码）、真实桌面与目标客户端验收。网页/隧道、从零客户端安装及 Windows/macOS 尚未验证；各层结果以实际执行记录为准。

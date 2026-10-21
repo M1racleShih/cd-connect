@@ -1,0 +1,13 @@
+import { writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { EventEmitter } from 'node:events';
+import { Journal } from '../../src/coordinator/store.js';
+import { Coordinator } from '../../src/coordinator/coordinator.js';
+import { snapshot } from './coordinator-fixture.js';
+const [dir,window]=process.argv.slice(2);
+const store=new Journal(dir);
+const codex=new EventEmitter();codex.read=async()=>({id:'dedicated-thread',status:{type:'idle'}});
+codex.start=async()=>{writeFileSync(join(dir,'external-send.json'),'1');return {id:'real-fixture-turn',status:'inProgress'};};
+const bridge={read:async(name)=>name==='bridge_health'?{...store.data.config.binding,profile:'desktop'}:snapshot()};
+const c=new Coordinator(store,bridge,codex,{hook:stage=>{if(stage===window){process.send({stage});Atomics.wait(new Int32Array(new SharedArrayBuffer(4)),0,0);}}});
+await c.run();

@@ -13,9 +13,18 @@ const copy = value => structuredClone(value);
 function fail(code) { throw new Error(code); }
 
 function prompt(task, instruction) {
-  return `cd-connect task ${task.id}, revision ${task.revision}, run ${task.run.id}.\n` +
-    `The following JSON is the authorized task specification:\n${JSON.stringify(task.spec, null, 2)}\n` +
-    (instruction ? `Continuation instruction: ${instruction}\n` : '') +
+  const list = items => items.length ? items.map(item => `- ${item.replace(/\n/g, '\n  ')}`).join('\n') : '(None specified.)';
+  const { workspace, goal, scope, out_of_scope, constraints, acceptance } = task.spec;
+  return `cd-connect task ${task.id}, revision ${task.revision}, run ${task.run.id}.\n\n` +
+    'Please carry out the following authorized task.\n\n' +
+    `## Goal\n\n${goal}\n\n` +
+    `## Working directory\n\n${workspace}\n\n` +
+    `## Scope\n\n${list(scope)}\n\n` +
+    `## Out of scope\n\n${list(out_of_scope)}\n\n` +
+    `## Constraints\n\n${list(constraints)}\n\n` +
+    `## Acceptance criteria\n\n${list(acceptance)}\n\n` +
+    (instruction ? `## Continuation instruction\n\n${instruction}\n\n` : '') +
+    '## Execution and handoff\n\n' +
     'Use your existing model and native tool permissions. Do not delegate to subagents unless the human explicitly authorized them. Stay in the stated scope. If requirements or authorization are missing, stop and describe the exact question for the human. Finish with your understanding, changed files and their digests or versions, verification commands, exit status and relevant results, and any unresolved questions. Do not claim reviewer acceptance. The reviewer will inspect native evidence after this turn ends.';
 }
 

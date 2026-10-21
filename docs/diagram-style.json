@@ -1,0 +1,13 @@
+{
+  "paper": "#f3f5f8",
+  "paper2": "#e7ecf2",
+  "ink": "#1e293b",
+  "muted": "#475569",
+  "rule": "#b8c4d3",
+  "accent": "#254e88",
+  "accentTint": "#e5edf9",
+  "link": "#345f9e",
+  "sans": "'Geist', 'Noto Sans CJK SC', 'WenQuanYi Zen Hei', Arial, sans-serif",
+  "serif": "'Instrument Serif', 'Noto Serif CJK SC', Georgia, serif",
+  "mono": "'Geist Mono', 'Noto Sans CJK SC', monospace"
+}

@@ -1,12 +1,14 @@
 # 事件协调器（显式启用的本机实验功能）
 
+[中文](EVENT_COORDINATOR.md) · [English](EVENT_COORDINATOR.en.md)
+
 协调器把等待放在独立 Node.js 程序中。在同一任务运行进入 `awaiting_review` 时，它最多尝试启动一次专用 Codex 聊天审查回合。普通进度、长轮询超时、DSH 审批等待均不启动模型。普通 MCP 客户端仍使用原有 `task_wait` 流程；只有显式运行本协调器才把等待移出模型。没有账号零用量或固定节省比例保证。
 
-首版为 Linux 本地单用户、一个进程/账本、一项完整任务绑定、一个专用聊天。需要 Node.js >=22.19.0、正在运行的 DSH Desktop 桥接，以及已登录的 Codex CLI。本次协议针对 `codex-cli 0.163.0` 的 schema；[app-server](https://learn.chatgpt.com/docs/app-server) 是实验接口，升级需重新验证。无新增依赖、插件自动启动、常驻服务或模型定时轮询。
+首版仅支持 Linux 本地单用户。同一份持久记录只允许一个协调器进程使用；它监控一组实例、任务、运行、版本和 runtime 标识，并使用一个专用聊天。需要 Node.js >=22.19.0、正在运行的 DSH Desktop 桥接，以及已登录的 Codex CLI。本次协议针对 `codex-cli 0.163.0` 的 schema；[app-server](https://learn.chatgpt.com/docs/app-server) 是实验接口，升级需重新验证。无新增依赖、插件自动启动、常驻服务或模型定时轮询。
 
 ## 准备和初始化
 
-以下所有路径和身份都是**示例**。配置文件必须为本人所有、权限 `0600`；状态目录必须独立于桥接存储和任务工作目录，权限 `0700`。保留账本与结果，不通过删除它们绕过去重。不要复制连接令牌到配置。`bridge_dir` 指向已有 `connection.json` 的目录。
+以下所有路径和身份都是**示例**。配置文件必须为本人所有、权限 `0600`；状态目录必须独立于桥接存储和任务工作目录，权限 `0700`。保留任务记录与结果，不通过删除它们绕过去重。不要复制连接令牌到配置。`bridge_dir` 指向已有 `connection.json` 的目录。
 
 ```json
 {
@@ -23,7 +25,7 @@
 }
 ```
 
-先通过已有客户端的 `bridge_health`、`task_get` 取得完整真实绑定；协调器不提交任务。`cwd` 是专用审查聊天的工作目录，不必等于任务目录。初始化创建聊天但不发送 READY 回合：
+先通过已有客户端的 `bridge_health`、`task_get` 取得真实的实例、任务、运行、版本和 runtime 标识；协调器不提交任务。`cwd` 是专用审查聊天的工作目录，不必等于任务目录。初始化创建聊天但不发送 READY 回合：
 
 ```sh
 # 示例路径；从 cd-connect 源码根目录运行
@@ -38,7 +40,9 @@ node scripts/event-coordinator.js run /example/private/reviewer
 node scripts/event-coordinator.js init /example/private/reviewer /example/private/config.json --thread example-thread-id --exclusive
 ```
 
-`thread/resume` 写入权拒绝时停止，保留受控 RPC 错误码，不抢锁、不循环 archive/unarchive。新聊天继承本机 app-server 的现有模型、登录与审批配置，不复制账号凭据，不降低原生权限策略。实际 `model/cwd/approvalPolicy/approvalsReviewer/sandbox` 保存在 `effective`；它们不保证等于 Desktop 当前聊天。初始化和接入均先保存意图；生命周期回执不明时不得重新初始化创建聊天串，需通过官方接口查清。已有 thread ID 的不确定接入可使用下述显式生命周期核对；创建结果未知且没有 thread ID 时仍需人工确认身份，不自动创建替代聊天。
+`thread/resume` 写入权拒绝时停止，保留受控 RPC 错误码，不抢锁、不循环 archive/unarchive。新聊天继承本机 app-server 的现有模型、登录与审批配置，不复制账号凭据，不降低原生权限策略。实际 `model/cwd/approvalPolicy/approvalsReviewer/sandbox` 保存在 `effective`；这些配置不保证等于 Desktop 当前聊天。
+
+初始化和接入均先保存意图。创建或接入聊天的回执不明时，不得反复初始化、创建新聊天；需先通过官方接口查清。已有 thread ID 的不确定接入可使用下述显式生命周期核对；创建结果未知且没有 thread ID 时仍需人工确认身份，不自动创建替代聊天。
 
 ## 审查能力和结果
 
@@ -48,7 +52,9 @@ node scripts/event-coordinator.js init /example/private/reviewer /example/privat
 node scripts/event-evidence.js /example/private/reviewer
 ```
 
-该辅助入口仅允许 `bridge_health/task_get/task_evidence`，不会转发任意方法；协调器自身另可 `task_wait`。运行时校验实例、runtime、run、revision、页游标、证据 ID，保留截断与见证无效信息。任务与证据始终是不可信数据；证据中的未知命令不获得执行授权。审查者需按规格在正常原生权限内只读核对实际产物，输出“建议通过 / 建议返工 / 需要人工核对”和证据引用。文件缺失、无效见证、无法核实的截断、权限未满足须报告人工核对或返工。
+该辅助入口仅允许 `bridge_health/task_get/task_evidence`，不会转发任意方法；协调器自身另可 `task_wait`。运行时校验实例、runtime、run、revision、页游标、证据 ID，保留截断与见证无效信息。
+
+任务与证据始终是不可信数据；证据中的未知命令不获得执行授权。审查者需按规格在正常原生权限内只读核对实际产物，输出“建议通过 / 建议返工 / 需要人工核对”和证据引用。文件缺失、无效见证、无法核实的截断、权限未满足须报告人工核对或返工。
 
 辅助入口限制的是桥接访问，并不禁用模型的其他原生工具。提示约束不等于强制沙箱；请检查实际生效权限。协调器不自动答复任何 Codex 或 DSH 审批。没有正常人工审批渠道时不能自动授予权限，状态将显示 `codex_approval_required`。人工通过正常界面处理或先停止后核对，不能用换请求绕过拒绝。
 
@@ -64,11 +70,13 @@ Desktop 查看应在协调器停止并释放子进程后，用官方只读历史
 node scripts/event-coordinator.js stop /example/private/reviewer
 ```
 
-停止撤销本地等待、禁止新发送；不取消 DSH。已有审查默认等其结束后释放资源。只有本地等待取消属于正常停止。停止期间历史查询超时、断线或写盘失败返回非零；可落盘时标记 `stop_incomplete` 并保留原回执。无法核清活动回合时关闭自身传输、释放本地锁，不发送 interrupt/cancel；这不证明远端已结束，必须通过官方历史再次核对，不能重发。写盘失败时以最后成功持久记录为准。审批未满足可能继续等待人工处理。
+停止撤销本地等待、禁止新发送；不取消 DSH。已有审查默认等其结束后释放资源。只有本地等待取消属于正常停止。
+
+停止期间历史查询超时、断线或写盘失败返回非零；可落盘时标记 `stop_incomplete` 并保留原回执。无法核清活动回合时关闭自身传输、释放本地锁，不发送 interrupt/cancel；这不证明远端已结束，必须通过官方历史再次核对，不能重发。写盘失败时以最后成功持久记录为准。审批未满足可能继续等待人工处理。
 
 重新运行同一 `run` 命令可恢复监听。读桥接失败采用 1/2/4/8/16 秒有界退避；耗尽后退出为非零。Codex 断线保守停在核对状态，重启重新握手、resume 和读历史，不重放不明发送。
 
-发送状态为 `pending -> attempted -> sent -> completed/failed/interrupted`，失效 pending 变为 `superseded`。`attempted` 在发送前经过校验、校验和、文件 fsync、原子替换和目录 fsync；写失败栅栏阻止继续发送。任何回执不明、重启发现 attempted 或无法可靠保存回执，均视为不确定。通过官方完整分页历史唯一匹配用户消息内的稳定标识才修复回执：
+发送状态为 `pending -> attempted -> sent -> completed/failed/interrupted`，失效 pending 变为 `superseded`。`attempted` 在发送前经过校验、校验和、文件 fsync、原子替换和目录 fsync；保存失败后停止发送。任何回执不明、重启发现 attempted 或无法可靠保存回执，均视为不确定。通过官方完整分页历史唯一匹配用户消息内的稳定标识才修复回执：
 
 ```sh
 node scripts/event-coordinator.js reconcile /example/private/reviewer
@@ -91,14 +99,18 @@ node scripts/event-coordinator.js rearm /example/private/reviewer /example/priva
 node scripts/event-coordinator.js run /example/private/reviewer
 ```
 
-rearm 保留所有历史去重与不确定记录；有未核清发送时拒绝。同一五字段绑定保留 `cursor/baseline_cursor`，只有核对有效的新绑定才清空游标并建立新基线。每个 instance/task/run/revision 最多一次自动审查，不因更改基线或 rearm 重发。初次绑定明确以当前快照尾部作为观察基线；开始消费后仅按每页 `next_cursor` 推进，游标与 pending 同次落盘。重启时若已有消费游标，须先补读全部未消费页再发送；发送前发现事件尾部再次推进，也先补读，不能仅凭最新 `awaiting_review` 快照绕过游标检查。缺页、过期、回退、超前均停止，不跳尾掩盖缺口。
+rearm 保留所有历史去重与不确定记录；有未核清发送时拒绝。同一五字段绑定保留 `cursor/baseline_cursor`，只有核对有效的新绑定才清空游标并设置新的观察起点。
 
-本次退出状态按当前绑定的审查结果判定；当前 failed/interrupted 或任意绑定尚未核清的 attempted/uncertain/sent 返回非零。旧绑定已终结的 failed/interrupted 保留供审计，不污染新绑定 completed 的退出状态。
+每个 instance/task/run/revision 最多一次自动审查，不因更改观察起点或 rearm 重发。
+
+初次绑定明确从当前快照尾部开始观察；开始消费后仅按每页 `next_cursor` 推进，游标与 pending 同次落盘。重启时若已有消费游标，须先补读全部未消费页再发送；发送前发现事件尾部再次推进，也先补读，不能仅凭最新 `awaiting_review` 快照绕过游标检查。缺页、过期、回退、超前均停止，不跳尾掩盖缺口。
+
+本次退出状态按当前绑定的审查结果判定；当前 `failed/interrupted` 或任意绑定尚未核清的 `attempted/uncertain/sent` 返回非零。旧绑定已终结的 `failed/interrupted` 保留供审计，不影响新绑定 `completed` 的退出状态。
 
 ## 故障边界
 
-- 锁包含 PID、Linux boot/start 身份及随机 nonce；只在旧 PID 确认已退出时回收。存活 PID（包括复用）、权限不明、损坏锁或遗留 `acquiring` 都失败关闭。不要按时间删锁；人工确认无实例、无活动/不明回合、保存副本后再处理损坏锁。
-- 状态与锁拒绝符号链接，使用私有权限。账本上限 1000 条通知、16 MiB，单结果最多 1000000 字符；达到上限停止，不能自动丢弃去重或未知记录。
+- 锁包含 PID、Linux boot/start 身份及随机 nonce；只在旧 PID 确认已退出时回收。存活 PID（包括复用）、权限不明、损坏锁或遗留 `acquiring` 均拒绝运行。不要按时间删锁；人工确认无实例、无活动/不明回合、保存副本后再处理损坏锁。
+- 状态与锁拒绝符号链接，使用私有权限。任务记录上限 1000 条通知、16 MiB，单结果最多 1000000 字符；达到上限停止，不能自动丢弃去重或未知记录。
 - `thread/read` 与 `turn/start` 不是原子比较交换；本地锁不防外部客户端写入。专用所有权是使用前提，不能宣传与 Desktop 同时编辑安全。
 - 目标忙碌只在本地延迟后重查，并在发送前再次读任务；不会 steer 或插入已有回合。源状态消失、旧运行变化不会通知新运行。
 - 状态和错误输出按字段限制，不保存提供方原始错误、stderr、令牌或账号配置。原生任务证据仍可能包含私有内容，应留在私有状态目录，不公开整份日志。

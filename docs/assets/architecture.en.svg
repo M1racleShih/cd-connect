@@ -1,0 +1,110 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="720" viewBox="0 0 1280 720" role="img" aria-labelledby="architecture-en-title architecture-en-desc" lang="en">
+<title id="architecture-en-title">cd-connect architecture</title>
+<desc id="architecture-en-desc">The user authorizes the planning client and approves operations in DSH; a local adapter connects the client to the Host plugin, native execution writes to the workspace, and separate task records, native logs, and file witnesses support review and recovery.</desc>
+<defs>
+  <style>
+    text { font-family: 'Geist', 'Noto Sans CJK SC', 'WenQuanYi Zen Hei', Arial, sans-serif; fill: #1e293b; }
+    .title { font-family: 'Instrument Serif', 'Noto Serif CJK SC', Georgia, serif; font-size: 32px; font-weight: 400; }
+    .subtitle { font-size: 16px; fill: #475569; }
+    .name { font-size: 20px; font-weight: 600; }
+    .small-name { font-size: 16px; font-weight: 600; }
+    .detail, .label, .zone-label, .legend { font-size: 12px; fill: #475569; }
+    .detail, .label { font-family: 'Geist Mono', 'Noto Sans CJK SC', monospace; }
+    .zone-label { font-size: 16px; font-weight: 600; }
+    .node rect { fill: #ffffff; stroke: #1e293b; stroke-width: 1.2; }
+    .node.input rect { fill: #e7ecf2; stroke: #475569; }
+    .node.focal rect { fill: #e5edf9; stroke: #254e88; stroke-width: 1.6; }
+    .node.store rect { fill: #e7ecf2; stroke: #475569; }
+    .connector { fill: none; stroke: #475569; stroke-width: 1.6; }
+    .connector.flow { stroke: #345f9e; }
+    .connector.verify { stroke-dasharray: 5 4; }
+  </style>
+  <marker id="architecture-en-arrow" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto-start-reverse"><path d="M0 0L8 3L0 6Z" fill="#475569"/></marker>
+  <marker id="architecture-en-arrow-accent" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto-start-reverse"><path d="M0 0L8 3L0 6Z" fill="#254e88"/></marker>
+  <marker id="architecture-en-arrow-link" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto-start-reverse"><path d="M0 0L8 3L0 6Z" fill="#345f9e"/></marker>
+</defs>
+<rect width="1280" height="720" fill="#f3f5f8"/>
+<text x="40" y="64" class="title" text-anchor="start">cd-connect architecture</text>
+<text x="40" y="96" class="subtitle" text-anchor="start">Planning and review connect to an existing DSH Desktop through MCP, keeping native models, permissions, and approvals.</text>
+<g class="zone">
+  <rect x="312" y="224" width="704" height="376" rx="8" fill="#f3f5f8" stroke="#b8c4d3" stroke-dasharray="4 4"/>
+  <text x="336" y="256" class="zone-label" text-anchor="start">Existing DSH Desktop Host</text>
+</g>
+<g class="edges">
+  <path class="connector flow" d="M136 192V288" marker-end="url(#architecture-en-arrow-link)"/>
+  <path class="connector flow" d="M232 160H848Q856 160 856 168V288" marker-end="url(#architecture-en-arrow-link)"/>
+  <path class="connector flow" d="M136 368V464" marker-end="url(#architecture-en-arrow-link)" marker-start="url(#architecture-en-arrow-link)"/>
+  <path class="connector flow" d="M232 500H272Q280 500 280 492V336Q280 328 288 328H352" marker-end="url(#architecture-en-arrow-link)" marker-start="url(#architecture-en-arrow-link)"/>
+  <path class="connector flow" d="M592 328H736" marker-end="url(#architecture-en-arrow-link)" marker-start="url(#architecture-en-arrow-link)"/>
+  <path class="connector flow" d="M976 328H1056" marker-end="url(#architecture-en-arrow-link)"/>
+  <path class="connector record" d="M440 368V464" marker-end="url(#architecture-en-arrow)" marker-start="url(#architecture-en-arrow)"/>
+  <path class="connector verify" d="M552 368V424Q552 432 560 432H652Q660 432 660 440V464" marker-end="url(#architecture-en-arrow)"/>
+  <path class="connector record" d="M856 368V464" marker-end="url(#architecture-en-arrow)" marker-start="url(#architecture-en-arrow)"/>
+  <path class="connector verify" d="M696 464V416Q696 408 704 408H848a8 8 0 0 1 16 0H1140Q1148 408 1148 400V368" marker-end="url(#architecture-en-arrow)"/>
+</g>
+<g class="edge-label"><rect x="144" y="224" width="128" height="24" fill="#f3f5f8"/><text x="208" y="240" class="label" text-anchor="middle">Authorize</text></g>
+<g class="edge-label"><rect x="424" y="128" width="240" height="24" fill="#f3f5f8"/><text x="544" y="144" class="label" text-anchor="middle">Human approval in DSH</text></g>
+<g class="edge-label"><rect x="144" y="404" width="128" height="24" fill="#f3f5f8"/><text x="208" y="420" class="label" text-anchor="middle">MCP stdio</text></g>
+<g class="edge-label"><rect x="288" y="404" width="128" height="24" fill="#f3f5f8"/><text x="352" y="420" class="label" text-anchor="middle">Loopback HTTP</text></g>
+<g class="edge-label"><rect x="288" y="428" width="128" height="24" fill="#f3f5f8"/><text x="352" y="444" class="label" text-anchor="middle">Bearer</text></g>
+<g class="edge-label"><rect x="608" y="296" width="112" height="24" fill="#f3f5f8"/><text x="664" y="312" class="label" text-anchor="middle">Native API</text></g>
+<g class="edge-label"><rect x="984" y="296" width="64" height="24" fill="#f3f5f8"/><text x="1016" y="312" class="label" text-anchor="middle">Tools</text></g>
+<g class="edge-label"><rect x="984" y="376" width="144" height="24" fill="#f3f5f8"/><text x="1056" y="392" class="label" text-anchor="middle">Check files</text></g>
+<g class="nodes">
+<g class="node input" data-node="human">
+      <rect x="40" y="128" width="192" height="64" rx="8"/>
+      <text x="136" y="156" class="name" text-anchor="middle">Human</text>
+      <text x="136" y="180" class="detail" text-anchor="middle">Goals &amp; authorization</text>
+    </g>
+<g class="node service" data-node="client">
+      <rect x="40" y="288" width="192" height="80" rx="8"/>
+      <text x="136" y="324" class="name" text-anchor="middle">Plan &amp; review</text>
+      <text x="136" y="348" class="detail" text-anchor="middle">Codex Desktop</text>
+    </g>
+<g class="node service" data-node="stdio">
+      <rect x="40" y="464" width="192" height="72" rx="8"/>
+      <text x="136" y="496" class="name" text-anchor="middle">Local adapter</text>
+      <text x="136" y="520" class="detail" text-anchor="middle">MCP stdio</text>
+    </g>
+<g class="node focal" data-node="bridge">
+      <rect x="352" y="288" width="240" height="80" rx="8"/>
+      <text x="472" y="324" class="name" text-anchor="middle">cd-connect plugin</text>
+      <text x="472" y="348" class="detail" text-anchor="middle">MCP server · tasks · review</text>
+    </g>
+<g class="node service" data-node="native">
+      <rect x="736" y="288" width="240" height="80" rx="8"/>
+      <text x="856" y="324" class="name" text-anchor="middle">DSH native execution</text>
+      <text x="856" y="348" class="detail" text-anchor="middle">adapter · session · agent</text>
+    </g>
+<g class="node store" data-node="records">
+      <rect x="344" y="464" width="184" height="72" rx="8"/>
+      <text x="436" y="496" class="small-name" text-anchor="middle">Task records</text>
+      <text x="436" y="520" class="detail" text-anchor="middle">ledger/tasks.json</text>
+    </g>
+<g class="node service" data-node="witness">
+      <rect x="568" y="464" width="184" height="72" rx="8"/>
+      <text x="660" y="496" class="small-name" text-anchor="middle">File witness</text>
+      <text x="660" y="520" class="detail" text-anchor="middle">check on completion</text>
+    </g>
+<g class="node store" data-node="logs">
+      <rect x="792" y="464" width="184" height="72" rx="8"/>
+      <text x="884" y="496" class="small-name" text-anchor="middle">Native logs</text>
+      <text x="884" y="520" class="detail" text-anchor="middle">record · reconcile</text>
+    </g>
+<g class="node store" data-node="workspace">
+      <rect x="1056" y="288" width="184" height="80" rx="8"/>
+      <text x="1148" y="324" class="small-name" text-anchor="middle">Task workspace</text>
+      <text x="1148" y="348" class="detail" text-anchor="middle">files &amp; artifacts</text>
+    </g>
+</g>
+<g class="legend-strip">
+  <path d="M40 640H1240" stroke="#b8c4d3"/>
+  <path d="M40 672H80" stroke="#345f9e" stroke-width="1.6"/>
+  <text x="92" y="676" class="legend" text-anchor="start">Task &amp; execution</text>
+  <path d="M344 672H384" stroke="#475569" stroke-width="1.6" stroke-dasharray="5 4"/>
+  <text x="396" y="676" class="legend" text-anchor="start">File verification</text>
+  <rect x="672" y="660" width="32" height="24" rx="4" fill="#e7ecf2" stroke="#475569"/>
+  <text x="716" y="676" class="legend" text-anchor="start">Stored records</text>
+</g>
+</svg>

@@ -1,6 +1,8 @@
 # 架构、协议身份与控制边界
 
-本文描述 cd-connect `0.4.1` 在 DSH Desktop `0.2.1-rc.2` 上的实际实现。功能概览见[中文 README](../README.md)或[English README](../README.en.md)；安装与故障处理见[安装与维护](INSTALLATION.md)；面向使用者的状态、证据与恢复契约见[任务处理说明](TASK_WORKFLOW.md)。
+[中文](ARCHITECTURE.md) · [English](ARCHITECTURE.en.md)
+
+本文描述 cd-connect `0.5.0` 在 DSH Desktop `0.2.1-rc.2` 上的实际实现。功能概览见[中文 README](../README.md)或[English README](../README.en.md)；安装与故障处理见[安装与维护](INSTALLATION.md)；面向使用者的状态、证据与恢复规则见[任务处理说明](TASK_WORKFLOW.md)。
 
 ## 1. 从问题推导出的约束
 
@@ -16,9 +18,9 @@ cd-connect 处理的是两个独立运行方之间的阶段协作：一方规划
 
 - **规划与审查端**：当前实测为 Codex 桌面会话。它启动本地 stdio MCP 适配器并调用工具，本身不直接访问 DSH 内部服务。
 - **stdio 适配器进程**：`src/stdio.js`，由客户端按 MCP 配置启动。启动时读取工具目录，每次调用时重新打开到 Host 的本地连接。
-- **DSH Desktop Host 进程**：插件 `src/plugin.js` 在其中运行，持有 MCP HTTP 服务、任务管理器、原生适配器和任务账本。
+- **DSH Desktop Host 进程**：插件 `src/plugin.js` 在其中运行，持有 MCP HTTP 服务、任务管理器、原生适配器和任务记录。
 - **原生会话与 Agent**：由 DSH 创建和管理；任务提交创建一个普通原生会话，后续运行复用同一会话。
-- **文件系统**：桥接账本、连接文件、DSH 原生日志与任务工作目录各自独立，权限和生命周期不同。
+- **文件系统**：桥接任务记录、连接文件、DSH 原生日志与任务工作目录各自独立，权限和生命周期不同。
 
 插件不会启动第二个 Host，也不会另起一个执行器。任务状态只存在于插件内；原生会话和日志仍由 DSH 管理。
 
@@ -27,13 +29,13 @@ cd-connect 处理的是两个独立运行方之间的阶段协作：一方规划
 | 组件 | 职责 | 明确不负责 |
 | --- | --- | --- |
 | `src/plugin.js` | 校验 `desktop` profile；采集 Host 身份；启动监听；写连接文件；管理生命周期与清理 | 启动新 Host、管理模型配置、代替审批 |
-| `src/server.js` | 注册 MCP 工具；回环 HTTP、Bearer 认证、Host/Origin 检查、请求体上限；收敛工具错误 | 保存任务状态、调用原生执行 |
+| `src/server.js` | 注册 MCP 工具；回环 HTTP、Bearer 认证、Host/Origin 检查、请求体上限；仅返回受控工具错误码 | 保存任务状态、调用原生执行 |
 | `src/stdio.js` | 把 Host 实际提供的工具暴露为本地 stdio MCP；转发调用 | 持有任务状态、读取 DSH 账号、缓存全部执行结果 |
 | `src/connection.js` | 读取并校验 `connection.json` 的权限、所有者、URL 与 token；建立本地 MCP 连接 | 读取 DSH 账号秘密、修改连接文件 |
 | `src/protocol.js` | 工具名称、Zod 输入 schema、MCP 注解、Agent 使用说明 | 执行任务、持久化 |
 | `src/native.js` | 对 DSH 公开服务做窄适配：创建/续写/取消/读日志/订阅事件；同步控制检查 | 修改模型、权限、审批策略，猜测原生状态 |
 | `src/tasks.js` | 任务状态机、请求去重、工作目录占用、证据投影、审查、取消、恢复、快照 | 批准原生操作、重放未知调用 |
-| `src/storage.js` | 单写入者锁、校验和快照、原子写入与 `fsync`、容量上限、旧账本游标修复 | 决定任务语义、自动修复任意损坏 |
+| `src/storage.js` | 单写入者锁、校验和快照、原子写入与 `fsync`、容量上限、旧版任务记录游标修复 | 决定任务语义、自动修复任意损坏 |
 | `src/workspace.js` | 目录重叠判断、完成时的文件/权限/符号链接见证 | 阻止其他进程写入、覆盖外部服务、证明修改历史 |
 
 `plugin.js` 生成的 `instance_id` 是 `hostname` 与实际 profile 路径的 SHA-256 摘要，跨插件重载稳定；`runtime_id` 是每次激活生成的 UUID。`dsh.app_boot_sha256` 来自实际读取的 app-boot `lib/index.js`，不是配置值。健康响应中的 `native_services` 只表示服务注册存在。
@@ -44,7 +46,7 @@ cd-connect 处理的是两个独立运行方之间的阶段协作：一方规划
 2. **创建原生会话**：先通过 `workspaceRegistry.create` 注册或复用规范目录对应的工作区，再通过 `sessionController.create({ workspaceId, sessionId })` 请求并关联一个普通原生会话，保存 DSH 实际返回的 `session_id`。若创建结果未知，任务进入人工核对，不自动重试；丢弃创建回执时也不根据“请求的会话编号”猜测实际映射。
 3. **派发运行**：每次运行生成新的 `run.id` 和原生请求编号 `cd-connect:<run-id>`。提示文本通过固定 Markdown 模板逐项呈现完整任务规格和可选续写指令（不概括内容），已有运行的文本及摘要不会重新生成，先持久化运行记录、提示摘要与控制预期，再保存 attempted 标记，最后调用原生 `prompt`（队列模式）或受控 `continue`。
 4. **观察执行**：插件订阅原生事件。匹配到带当前请求编号的用户消息后进入 `running`；记录轮次开始、审批审计、助手消息、工具调用和工具结果。原生日志位置与内容摘要写入运行检查点。
-5. **结束与落定**：原生 `turn/end` 设置执行完成；Agent 空闲后落定。取消匹配且轮次 `aborted` 时进入 `cancelled`；权限被拒或执行失败时进入 `failed`；仍有待审批结果时进入人工核对；其他正常完成才捕获完成时目录见证并进入 `awaiting_review`。
+5. **确认执行结果**：原生 `turn/end` 设置执行完成；Agent 空闲后才确认最终执行状态。取消匹配且轮次 `aborted` 时进入 `cancelled`；权限被拒或执行失败时进入 `failed`；仍有待审批结果时进入人工核对；其他正常完成才捕获完成时目录见证并进入 `awaiting_review`。
 6. **审查**：只接受当前运行的证据编号，且 `accepted` 要求完成时目录见证仍有效。`accepted` 记录审查者决定并释放目录占用；`changes_requested` 保留占用，等待同会话续写。
 7. **续写**：只允许在 `changes_requested`、`accepted`、`cancelled` 或 `failed` 后显式调用。要求原生 Agent 空闲、工作目录一致，升级版本、重建提交前见证、清除旧产物见证，然后以新的运行编号在同一 `session_id` 中继续。
 8. **取消与恢复**：取消只针对已匹配的活跃运行，接受不等于确认；重启后必须先读快照，再用 `task_recover` 显式核对原生日志。两条路径都不会自动重放未知动作。
@@ -55,9 +57,9 @@ cd-connect 处理的是两个独立运行方之间的阶段协作：一方规划
 
 | 标识 | 含义 | 用途与边界 |
 | --- | --- | --- |
-| `instance_id` | Host 名与 profile 真实路径的摘要 | 绑定账本实例；profile/home 变化时拒绝错误账本 |
-| `runtime_id` | 每次插件激活生成的 UUID | 判断任务是否跨运行；新激活后快照投影为 `needs_recovery` |
-| `task_id` | 桥接生成的任务标识 | 查询、控制、恢复；账本内唯一 |
+| `instance_id` | Host 名与 profile 真实路径的摘要 | 绑定任务记录实例；profile/home 变化时拒绝错误任务记录 |
+| `runtime_id` | 每次插件激活生成的 UUID | 识别任务是否跨插件激活；新激活后快照投影为 `needs_recovery` |
+| `task_id` | 桥接生成的任务标识 | 查询、控制、恢复；任务记录内唯一 |
 | `revision` | 每任务单调递增版本 | 所有写操作携带 `expected_revision`；冲突拒绝 |
 | `session_id` | DSH 实际回执的原生会话编号 | 续写、日志读取、取消；不是请求时猜测的编号 |
 | `run.id` | 每次派发生成的运行编号 | 控制、证据、审查均绑定当前运行 |
@@ -73,13 +75,13 @@ cd-connect 处理的是两个独立运行方之间的阶段协作：一方规划
 
 ## 6. 持久化、容量与恢复
 
-账本位于实际 DSH home 下的 `cd-connect/ledger/tasks.json`，目录创建时使用 `0700`，文件与锁使用 `0600`。快照格式版本为 `1`，绑定 `instance_id`，使用规范 JSON 的 SHA-256 校验和。写入顺序为：同目录临时文件、写入、`fsync`、原子替换、目录 `fsync`。加载时重新校验校验和、规格 schema、请求哈希、任务/请求 ID 唯一性、状态、事件顺序和容量上限。
+任务记录位于实际 DSH home 下的 `cd-connect/ledger/tasks.json`，目录创建时使用 `0700`，文件与锁使用 `0600`。快照格式版本为 `1`，绑定 `instance_id`，使用规范 JSON 的 SHA-256 校验和。写入顺序为：同目录临时文件、写入、`fsync`、原子替换、目录 `fsync`。加载时重新校验校验和、规格 schema、请求哈希、任务/请求 ID 唯一性、状态、事件顺序和容量上限。
 
-存储采用单写入者锁 `tasks.lock`，记录 PID 与 nonce，并用 `tasks.lock.acquiring` 防止并发获取。只有确认旧 PID 已退出（`ESRCH`）才回收遗留锁；活跃锁不会被抢占。保存失败会使本插件后续操作进入失败栅栏，健康响应报告存储异常；修复磁盘或权限后需要重载并核对，不能凭内存状态继续验收。
+存储采用单写入者锁 `tasks.lock`，记录 PID 与 nonce，并用 `tasks.lock.acquiring` 防止并发获取。只有确认旧 PID 已退出（`ESRCH`）才回收遗留锁；活跃锁不会被抢占。保存失败会停止本插件的后续操作，健康响应报告存储异常；修复磁盘或权限后需要重载并核对，不能凭内存状态继续验收。
 
 容量上限：100 个任务、2000 个请求记录、每任务 20 次运行、256 条任务事件、512 条证据、每轮 50000 个原生事件检查点、50 个审批请求。每项规格文本最多 4000 字符、每个列表最多 20 项；HTTP 请求体最多 16 KiB。事件与证据每页默认 20 条、最多 50 条；过旧或超前游标明确报错。
 
-启动或插件重载后，任务不会自动恢复执行。快照会把尚未与本 `runtime_id` 核对的任务投影为 `needs_recovery`，此时控制被拒绝。恢复流程先读取任务，再调用 `task_recover`；`inspect` 读取原生日志，核对目录、游标、队列、请求匹配和事件摘要，不发送提示。只有账本证明意图尚未越过原生调用保存点、且目录见证未变时，`dispatch_prepared` 才允许派发。已越过保存点但结果不明、日志缺失或内容冲突时，保持人工核对。
+启动或插件重载后，任务不会自动恢复执行。快照会把尚未与本 `runtime_id` 核对的任务投影为 `needs_recovery`，此时控制被拒绝。恢复流程先读取任务，再调用 `task_recover`；`inspect` 读取原生日志，核对目录、游标、队列、请求匹配和事件摘要，不发送提示。只有任务记录证明意图尚未越过原生调用保存点、且目录见证未变时，`dispatch_prepared` 才允许派发。已越过保存点但结果不明、日志缺失或内容冲突时，保持人工核对。
 
 若任务在桥接离线期间完成，后续可从原生日志补回证据，但无法重建完成当时的目录状态，`artifacts.valid` 为 `false`，不能直接验收；应先记录返工并在同一会话重新验证。旧版本恢复事件的已知游标覆盖会在加载时修复：依据持久事件总数和有界事件数组恢复桥接序号，把原值保存为 `native_cursor`；其他事件顺序损坏仍拒绝加载，不重放执行，也不改请求去重记录。
 
@@ -91,7 +93,7 @@ cd-connect 处理的是两个独立运行方之间的阶段协作：一方规划
 
 ### 审批
 
-DSH 原生审批门决定是否执行工具操作。桥接只订阅 `approval/asked` 与 `approval/decided` 审计事件，把待审批项展示给用户；没有批准工具，也不注册审批答复处理器。审批事件没有 `turn` 字段，因此只有已匹配、尚未结束的当前轮次内的审计才会被关联。拒绝或 `unavailable` 记录为权限失败，任务不能验收，即使模型随后正常结束。
+DSH 原生审批机制决定是否执行工具操作。桥接只订阅 `approval/asked` 与 `approval/decided` 审计事件，把待审批项展示给用户；没有批准工具，也不注册审批答复处理器。审批事件没有 `turn` 字段，因此只有已匹配、尚未结束的当前轮次内的审计才会被关联。拒绝或 `unavailable` 记录为权限失败，任务不能验收，即使模型随后正常结束。
 
 ### 目录与证据
 
@@ -107,7 +109,7 @@ HTTP 服务只监听 `127.0.0.1`，只接受 `POST /mcp`，校验精确 Host、�
 
 ## 8. 状态投影与失败分类
 
-持久任务状态包括 `dispatching`、`running`、`execution_completed`、`awaiting_review`、`changes_requested`、`accepted`、`failed`、`needs_human`、`waiting_approval`、`cancel_requested` 和 `cancelled`。`needs_recovery` 是快照投影：当任务的 `reconciled_runtime` 与当前 `runtime_id` 不一致，或插件正在关闭时，对外显示该状态，但不作为新的持久状态写回账本。
+持久任务状态包括 `dispatching`、`running`、`execution_completed`、`awaiting_review`、`changes_requested`、`accepted`、`failed`、`needs_human`、`waiting_approval`、`cancel_requested` 和 `cancelled`。`needs_recovery` 是快照投影：当任务的 `reconciled_runtime` 与当前 `runtime_id` 不一致，或插件正在关闭时，对外显示该状态，但不作为新的持久状态写回任务记录。
 
 `status_detail` 进一步区分：
 
@@ -127,7 +129,7 @@ HTTP 服务只监听 `127.0.0.1`，只接受 `POST /mcp`，校验精确 Host、�
 - 不提供模型切换、审批批准、无人值守自动恢复、任务归档或系统级目录锁。
 - 目录见证有明确的文件和容量范围；外部服务、链接目标内容、并发写入和修改后恢复的历史不在覆盖内。
 - 不保证外部副作用恰好一次；崩溃或回执丢失时仍需要人工核对。
-- 当前是 JavaScript，`npm run check` 递归检查 `src/`、`scripts/`、`test/`（含 `test/support/`）的语法，不是类型检查；`.github/workflows/ci.yml` 覆盖 Linux 上 Node.js `22.19.0` 与 `24.18.0` 的基础检查，执行结果以仓库 Actions 记录为准。
+- 当前是 JavaScript，`npm run check` 递归检查 `src/`、`scripts/`、`test/`（含 `test/support/`）的语法，不是类型检查；`.github/workflows/ci.yml` 覆盖 Linux 上 Node.js `22.19.0` 与 `24.18.0` 的基础检查及双语文档检查，执行结果以仓库 Actions 记录为准。
 - 最低 Node.js `22.19.0` 已在干净环境用 `22.19.0` 与 `24.18.0` 验证依赖安装、默认测试和递归语法检查；原生组件测试与真实桌面验收不在该范围内。
 - 任务容量到达上限后停止新增，不通过删除去重记录或重启绕过；归档与迁移需要人工方案。
 
@@ -135,15 +137,15 @@ HTTP 服务只监听 `127.0.0.1`，只接受 `POST /mcp`，校验精确 Host、�
 
 | 测试 | 主要覆盖 | 不替代 |
 | --- | --- | --- |
-| `test/tasks.test.js` | 提交流程、MCP 双路径、分页、证据投影、请求去重、错误收敛 | 真实桌面与目标客户端独立验收 |
+| `test/tasks.test.js` | 提交流程、MCP 双路径、分页、证据投影、请求去重、受控错误返回 | 真实桌面与目标客户端独立验收 |
 | `test/controls.test.js` | 审批审计、取消确认、同栈控制、失败分类、人工恢复 | 真实模型与审批答复器 |
-| `test/recovery.test.js` | 进程崩溃、重启、离线完成、存储故障、旧账本与游标迁移、目录见证失效 | 真实 DSH 重启和真实桌面 |
+| `test/recovery.test.js` | 进程崩溃、重启、离线完成、存储故障、旧版任务记录与游标迁移、目录见证失效 | 真实 DSH 重启和真实桌面 |
 | `test/health.test.js` | 真实 MCP 握手、认证/边界拒绝、插件生命周期、stdio 转发、连接文件权限 | 目标客户端发现工具 |
 | `test/native-lifecycle.test.js` | 原生冷启动、JSONL 日志、审批服务、AgentLoop 控制（需 DSH 源码） | 完整桌面任务验收 |
-| `.github/workflows/ci.yml` | Linux 上 Node.js `22.19.0`/`24.18.0` 的依赖安装、默认测试与递归语法检查 | Hosted CI 执行记录、原生组件测试、真实桌面与目标客户端独立验收 |
+| `.github/workflows/ci.yml` | Linux 上 Node.js `22.19.0`/`24.18.0` 的依赖安装、默认测试、递归语法检查与双语文档检查 | Hosted CI 执行记录、原生组件测试、真实桌面与目标客户端独立验收 |
 
-默认测试会跳过需要 `CD_CONNECT_DSH_SOURCE` 的原生组件测试；CI 只运行默认测试和递归语法检查。验证分层与未覆盖项见[贡献指南](../CONTRIBUTING.md)。
+默认测试会跳过需要 `CD_CONNECT_DSH_SOURCE` 的原生组件测试；CI 运行默认测试、递归语法检查和双语文档检查。验证分层与未覆盖项见[贡献指南](../CONTRIBUTING.md)。
 
 ## 显式事件协调器
 
-`src/coordinator/` 与 `scripts/event-coordinator.js` 是独立前台程序，不随插件启动，不修改任务状态机。私有协调器账本保存完整绑定、消费游标、发送意图与回合结果；桥接只有只读访问。Codex 使用独立 stdio 子进程和专用聊天，发送前持久栅栏、不确定结果不重放。原生审批不自动答复，执行完成与人工验收继续分离。CLI、只读证据入口、所有权与故障限制见[事件协调器](EVENT_COORDINATOR.md)。
+`src/coordinator/` 与 `scripts/event-coordinator.js` 是独立前台程序，不随插件启动，不修改任务状态机。协调器的私有记录保存实例、任务、运行、版本和 runtime 标识，以及消费游标、发送意图与回合结果；桥接只有只读访问。Codex 使用独立 stdio 子进程和专用聊天，发送前先保存尝试记录，结果不明时不重放。原生审批不自动答复，执行完成与人工验收继续分离。CLI、只读证据入口、所有权与故障限制见[事件协调器](EVENT_COORDINATOR.md)。

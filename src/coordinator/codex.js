@@ -56,7 +56,7 @@ export class CodexStdio extends EventEmitter {
     });
   }
   async initialize() {
-    const result = await this.request('initialize', { clientInfo: { name:'cd_connect_coordinator',title:'cd-connect event coordinator',version:'0.4.1' } });
+    const result = await this.request('initialize', { clientInfo: { name:'cd_connect_coordinator',title:'cd-connect event coordinator',version:'0.5.0' } });
     this.child.stdin.write(`${JSON.stringify({ method:'initialized',params:{} })}\n`); return result;
   }
   async read(threadId) {

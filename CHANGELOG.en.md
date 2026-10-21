@@ -18,6 +18,7 @@ This page records feature changes and upgrade considerations. See [installation 
 - Create or reuse DSH sidebar workspaces by canonical task directory, then create and attach native sessions through `workspaceId`. Preserve existing workspace names. Attachment failure stops dispatch for human inspection.
 - Present the complete goal, workspace, scope, exclusions, constraints, acceptance criteria, and continuation instruction through a fixed Markdown template. Persisted run prompts and digests are not regenerated.
 - Add success and rejection coverage for workspace membership, prompt fidelity, event waits, recovery, stopping, and error handling.
+- Synchronize integration-test progress with the registered server wait instead of startup timing. Retain two real 25000-millisecond timeouts and the zero-model-start assertion.
 
 ### Documentation and appearance
 

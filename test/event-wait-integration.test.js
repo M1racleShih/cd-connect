@@ -21,9 +21,12 @@ test('A01 real HTTP MCP: two full 25000ms timeouts plus ordinary progress start 
  const journal=new Journal(join(dir,'coordinator'),initialState({binding,bridge_dir:bridgeDir,cwd:workspace,title:'fixture'}));journal.data.lifecycle='ready';journal.data.thread_id='dedicated-thread';journal.save();
  const bridge=new BridgeReader(bridgeDir);const codex=new EventEmitter();let starts=0;codex.start=async()=>{starts++;throw new Error('unexpected_start');};codex.read=async()=>({id:'dedicated-thread',status:{type:'idle'}});
  const c=new Coordinator(journal,bridge,codex);const begin=Date.now();
+ // Wait for the server's long poll before emitting progress. A startup timer
+ // can fire before the coordinator takes its baseline on a slower runner.
+ const wait=manager.wait.bind(manager);let progressSent=false;
+ manager.wait=(...args)=>{const pending=wait(...args);if(!progressSent&&manager.waiters.get(task.task_id)?.size){progressSent=true;native.emit('assistant/message',{turn:1,message:{content:[{type:'text',text:'ordinary progress'}]}});}return pending;};
  // Program callbacks observe test progress; no model or timers wake a model.
  const original=bridge.read.bind(bridge);bridge.read=async(...args)=>{const result=await original(...args);if(args[0]==='task_wait'&&result.timed_out&&journal.data.stats.timeouts===1)setImmediate(()=>c.stop());return result;};
- const progress=setTimeout(()=>native.emit('assistant/message',{turn:1,message:{content:[{type:'text',text:'ordinary progress'}]}}),100);
- try{await c.run();assert.equal(starts,0);assert.equal(journal.data.stats.timeouts,2);assert.ok(Date.now()-begin>=50000);assert.ok(journal.data.stats.waits>=3);}
- finally{clearTimeout(progress);await bridge.close();journal.close();await server.close();await manager.close();rmSync(dir,{recursive:true,force:true});}
+ try{await c.run();assert.equal(progressSent,true);assert.equal(starts,0);assert.equal(journal.data.stats.timeouts,2);assert.ok(Date.now()-begin>=50000);assert.ok(journal.data.stats.waits>=3);}
+ finally{await bridge.close();journal.close();await server.close();await manager.close();rmSync(dir,{recursive:true,force:true});}
 });
